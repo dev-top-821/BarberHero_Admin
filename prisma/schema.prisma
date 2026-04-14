@@ -1,0 +1,347 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── ENUMS ────────────────────────────────────────
+
+enum UserRole {
+  CUSTOMER
+  BARBER
+  ADMIN
+}
+
+enum BarberStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  BLOCKED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  ON_THE_WAY
+  STARTED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  HELD
+  RELEASED
+  REFUNDED
+  FAILED
+}
+
+enum TransactionType {
+  EARNING
+  PLATFORM_FEE
+  PAYOUT
+  INSTANT_WITHDRAWAL
+  WITHDRAWAL_FEE
+}
+
+enum ReportCategory {
+  SERVICE_QUALITY
+  NO_SHOW
+  PAYMENT
+  BEHAVIOUR
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED_REFUNDED
+  RESOLVED_NO_REFUND
+  REJECTED
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+// ─── USER ─────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  phone        String?
+  profilePhoto String?
+  role         UserRole
+  isBlocked    Boolean  @default(false)
+  fcmToken     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  barberProfile BarberProfile?
+  bookings      Booking[]      @relation("CustomerBookings")
+  reviews       Review[]
+  chatMessages  ChatMessage[]
+
+  @@index([email])
+  @@index([role])
+}
+
+// ─── BARBER ───────────────────────────────────────
+
+model BarberProfile {
+  id        String       @id @default(uuid())
+  userId    String       @unique
+  user      User         @relation(fields: [userId], references: [id])
+  bio       String?
+  experience String?
+  status    BarberStatus @default(PENDING)
+  isOnline  Boolean      @default(false)
+  latitude  Float?
+  longitude Float?
+  address   String?
+  termsAcceptedAt DateTime?
+  termsVersion    String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  services     Service[]
+  availability AvailabilitySlot[]
+  settings     BarberSettings?
+  wallet       Wallet?
+  bookings     Booking[]      @relation("BarberBookings")
+  reviews      Review[]
+  photos       BarberPhoto[]
+
+  @@index([status])
+  @@index([isOnline])
+  @@index([latitude, longitude])
+}
+
+model BarberPhoto {
+  id              String        @id @default(uuid())
+  barberProfileId String
+  barberProfile   BarberProfile @relation(fields: [barberProfileId], references: [id], onDelete: Cascade)
+  url             String
+  order           Int           @default(0)
+  createdAt       DateTime      @default(now())
+
+  @@index([barberProfileId])
+}
+
+model Service {
+  id              String        @id @default(uuid())
+  barberProfileId String
+  barberProfile   BarberProfile @relation(fields: [barberProfileId], references: [id], onDelete: Cascade)
+  name            String
+  durationMinutes Int
+  priceInPence    Int
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  bookingServices BookingService[]
+
+  @@index([barberProfileId])
+}
+
+model AvailabilitySlot {
+  id              String        @id @default(uuid())
+  barberProfileId String
+  barberProfile   BarberProfile @relation(fields: [barberProfileId], references: [id], onDelete: Cascade)
+  dayOfWeek       DayOfWeek
+  startTime       String        // "09:00" (HH:mm)
+  endTime         String        // "17:00" (HH:mm)
+  isActive        Boolean       @default(true)
+
+  @@unique([barberProfileId, dayOfWeek])
+  @@index([barberProfileId])
+}
+
+model BarberSettings {
+  id                    String        @id @default(uuid())
+  barberProfileId       String        @unique
+  barberProfile         BarberProfile @relation(fields: [barberProfileId], references: [id], onDelete: Cascade)
+  serviceRadiusMiles    Float         @default(5.0)
+  minBookingNoticeHours Int           @default(2)
+  updatedAt             DateTime      @updatedAt
+}
+
+// ─── BOOKING ──────────────────────────────────────
+
+model Booking {
+  id           String        @id @default(uuid())
+  customerId   String
+  customer     User          @relation("CustomerBookings", fields: [customerId], references: [id])
+  barberId     String
+  barber       BarberProfile @relation("BarberBookings", fields: [barberId], references: [id])
+  date         DateTime
+  startTime    String        // "09:30" (HH:mm)
+  status       BookingStatus @default(PENDING)
+  address      String
+  latitude     Float?
+  longitude    Float?
+  totalInPence Int
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  services         BookingService[]
+  payment          Payment?
+  verificationCode VerificationCode?
+  chatRoom         ChatRoom?
+  reports          Report[]
+
+  @@index([customerId])
+  @@index([barberId])
+  @@index([status])
+  @@index([date])
+}
+
+model BookingService {
+  id           String  @id @default(uuid())
+  bookingId    String
+  booking      Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  serviceId    String
+  service      Service @relation(fields: [serviceId], references: [id])
+  priceInPence Int
+
+  @@index([bookingId])
+}
+
+model VerificationCode {
+  id        String   @id @default(uuid())
+  bookingId String   @unique
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  code      String
+  isUsed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// ─── PAYMENT ──────────────────────────────────────
+
+model Payment {
+  id                    String        @id @default(uuid())
+  bookingId             String        @unique
+  booking               Booking       @relation(fields: [bookingId], references: [id])
+  stripePaymentIntentId String        @unique
+  amountInPence         Int
+  platformFeeInPence    Int           @default(499)
+  barberAmountInPence   Int
+  status                PaymentStatus @default(HELD)
+  capturedAt            DateTime?
+  heldUntil             DateTime?
+  releasedAt            DateTime?
+  refundedAt            DateTime?
+  refundReason          String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@index([stripePaymentIntentId])
+}
+
+// ─── WALLET ───────────────────────────────────────
+
+model Wallet {
+  id              String        @id @default(uuid())
+  barberProfileId String        @unique
+  barberProfile   BarberProfile @relation(fields: [barberProfileId], references: [id])
+  balanceInPence  Int           @default(0)
+  updatedAt       DateTime      @updatedAt
+
+  transactions WalletTransaction[]
+}
+
+model WalletTransaction {
+  id            String          @id @default(uuid())
+  walletId      String
+  wallet        Wallet          @relation(fields: [walletId], references: [id])
+  type          TransactionType
+  amountInPence Int
+  description   String?
+  bookingId     String?
+  createdAt     DateTime        @default(now())
+
+  @@index([walletId])
+  @@index([createdAt])
+}
+
+// ─── CHAT ─────────────────────────────────────────
+
+model ChatRoom {
+  id        String   @id @default(uuid())
+  bookingId String   @unique
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+  createdAt DateTime @default(now())
+
+  messages ChatMessage[]
+}
+
+model ChatMessage {
+  id         String   @id @default(uuid())
+  chatRoomId String
+  chatRoom   ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  senderId   String
+  sender     User     @relation(fields: [senderId], references: [id])
+  content    String
+  createdAt  DateTime @default(now())
+
+  @@index([chatRoomId, createdAt])
+}
+
+// ─── REPORT / DISPUTE ─────────────────────────────
+
+model Report {
+  id              String         @id @default(uuid())
+  bookingId       String
+  booking         Booking        @relation(fields: [bookingId], references: [id])
+  raisedById      String
+  category        ReportCategory
+  description     String
+  status          ReportStatus   @default(OPEN)
+  adminNote       String?
+  resolvedById    String?
+  resolvedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  images ReportImage[]
+
+  @@index([bookingId])
+  @@index([status])
+  @@index([raisedById])
+}
+
+model ReportImage {
+  id        String   @id @default(uuid())
+  reportId  String
+  report    Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  url       String
+  createdAt DateTime @default(now())
+
+  @@index([reportId])
+}
+
+// ─── REVIEW ───────────────────────────────────────
+
+model Review {
+  id              String        @id @default(uuid())
+  customerId      String
+  customer        User          @relation(fields: [customerId], references: [id])
+  barberProfileId String
+  barberProfile   BarberProfile @relation(fields: [barberProfileId], references: [id])
+  rating          Int
+  comment         String?
+  createdAt       DateTime      @default(now())
+
+  @@index([barberProfileId])
+  @@index([customerId])
+}
