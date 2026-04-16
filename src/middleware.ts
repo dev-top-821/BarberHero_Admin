@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const ADMIN_COOKIE = "admin_session";
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Admin panel routes — check for admin session
+  // Admin panel guard — presence check only; full JWT verification happens
+  // server-side in (panel)/layout.tsx (Node runtime, where jsonwebtoken works).
   if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/login")) {
-    // TODO: Check admin session cookie
-    // For now, allow access — will be enforced via server-side auth in pages
+    const session = request.cookies.get(ADMIN_COOKIE);
+    if (!session) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/admin/login";
+      return NextResponse.redirect(url);
+    }
   }
 
   // CORS headers for mobile API

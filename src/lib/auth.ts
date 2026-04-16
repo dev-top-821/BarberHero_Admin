@@ -8,9 +8,18 @@ const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET!;
 export interface JwtPayload {
   sub: string;
   role: UserRole;
+  fullName: string;
+  email: string;
   iat: number;
   exp: number;
 }
+
+export type TokenUser = {
+  id: string;
+  role: UserRole;
+  fullName: string;
+  email: string;
+};
 
 export function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
@@ -23,14 +32,20 @@ export function verifyPassword(
   return bcrypt.compare(password, hash);
 }
 
-export function generateAccessToken(userId: string, role: UserRole): string {
-  return jwt.sign({ sub: userId, role }, JWT_SECRET, { expiresIn: "24h" });
+export function generateAccessToken(user: TokenUser): string {
+  return jwt.sign(
+    { sub: user.id, role: user.role, fullName: user.fullName, email: user.email },
+    JWT_SECRET,
+    { expiresIn: "24h" }
+  );
 }
 
-export function generateRefreshToken(userId: string, role: UserRole): string {
-  return jwt.sign({ sub: userId, role }, JWT_REFRESH_SECRET, {
-    expiresIn: "30d",
-  });
+export function generateRefreshToken(user: TokenUser): string {
+  return jwt.sign(
+    { sub: user.id, role: user.role, fullName: user.fullName, email: user.email },
+    JWT_REFRESH_SECRET,
+    { expiresIn: "30d" }
+  );
 }
 
 export function verifyAccessToken(token: string): JwtPayload {

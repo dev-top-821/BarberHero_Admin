@@ -46,8 +46,14 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const accessToken = generateAccessToken(user.id, user.role);
-    const refreshToken = generateRefreshToken(user.id, user.role);
+    const tokenUser = {
+      id: user.id,
+      role: user.role,
+      fullName: user.fullName,
+      email: user.email,
+    };
+    const accessToken = generateAccessToken(tokenUser);
+    const refreshToken = generateRefreshToken(tokenUser);
 
     return jsonResponse(
       {

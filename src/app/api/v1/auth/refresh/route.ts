@@ -14,8 +14,14 @@ export async function POST(request: NextRequest) {
 
     const payload = verifyRefreshToken(parsed.data.refreshToken);
 
-    const accessToken = generateAccessToken(payload.sub, payload.role);
-    const refreshToken = generateRefreshToken(payload.sub, payload.role);
+    const tokenUser = {
+      id: payload.sub,
+      role: payload.role,
+      fullName: payload.fullName,
+      email: payload.email,
+    };
+    const accessToken = generateAccessToken(tokenUser);
+    const refreshToken = generateRefreshToken(tokenUser);
 
     return jsonResponse({ accessToken, refreshToken });
   } catch {

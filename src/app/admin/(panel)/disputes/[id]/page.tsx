@@ -6,9 +6,9 @@ export default async function AdminDisputeDetailPage({
   const { id } = await params;
 
   return (
-    <div className="space-y-6">
+    <div className="p-8 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-[#1A1A1A]">Dispute #{id.slice(0, 8)}</h1>
+        <h2 className="text-xl font-bold text-[#1A1A1A]">Dispute #{id.slice(0, 8)}</h2>
         <a href="/admin/disputes" className="text-sm text-gray-500 hover:text-[#1A1A1A]">
           ← Back to disputes
         </a>
