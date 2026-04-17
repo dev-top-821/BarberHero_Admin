@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import BookingRow from "./BookingRow";
 
 const PAGE_SIZE = 10;
 
@@ -11,15 +12,6 @@ const FILTERS = [
   { value: "COMPLETED", label: "Completed" },
   { value: "CANCELLED", label: "Cancelled" },
 ] as const;
-
-const statusStyle: Record<string, string> = {
-  PENDING: "bg-yellow-100 text-yellow-700",
-  CONFIRMED: "bg-green-100 text-green-700",
-  ON_THE_WAY: "bg-blue-100 text-blue-700",
-  STARTED: "bg-blue-100 text-blue-700",
-  COMPLETED: "bg-green-100 text-green-700",
-  CANCELLED: "bg-gray-200 text-gray-600",
-};
 
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -45,6 +37,9 @@ export default async function AdminBookingsPage({
       include: {
         customer: { select: { fullName: true } },
         barber: { include: { user: { select: { fullName: true } } } },
+        services: { include: { service: { select: { name: true } } } },
+        payment: { select: { status: true, stripePaymentIntentId: true } },
+        verificationCode: { select: { code: true, isUsed: true } },
       },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * PAGE_SIZE,
@@ -56,6 +51,27 @@ export default async function AdminBookingsPage({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = Math.min(page * PAGE_SIZE, total);
+
+  const serialized = bookings.map((b) => ({
+    id: b.id,
+    date: dateFmt.format(b.date),
+    startTime: b.startTime,
+    status: b.status,
+    address: b.address,
+    totalInPence: b.totalInPence,
+    customerName: b.customer.fullName,
+    barberName: b.barber.user.fullName,
+    services: b.services.map((bs) => ({
+      name: bs.service.name,
+      priceInPence: bs.priceInPence,
+    })),
+    payment: b.payment
+      ? { status: b.payment.status, stripePaymentIntentId: b.payment.stripePaymentIntentId }
+      : null,
+    verificationCode: b.verificationCode
+      ? { code: b.verificationCode.code, isUsed: b.verificationCode.isUsed }
+      : null,
+  }));
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-4">
@@ -99,45 +115,26 @@ export default async function AdminBookingsPage({
           <table className="w-full text-sm min-w-180">
             <thead className="bg-white border-b border-gray-100">
               <tr className="text-left text-xs text-gray-500 uppercase tracking-wider">
-                <th className="px-6 py-3 font-medium">ID</th>
+                <th className="px-6 py-3 font-medium">Booking ID</th>
                 <th className="px-6 py-3 font-medium">Customer</th>
                 <th className="px-6 py-3 font-medium">Barber</th>
-                <th className="px-6 py-3 font-medium">Date</th>
+                <th className="px-6 py-3 font-medium">Date & Time</th>
+                <th className="px-6 py-3 font-medium">Service</th>
                 <th className="px-6 py-3 font-medium">Status</th>
                 <th className="px-6 py-3 font-medium text-right">Amount</th>
+                <th className="px-4 py-3 w-8"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {bookings.length === 0 ? (
+              {serialized.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-16 text-center text-gray-400">
+                  <td colSpan={8} className="px-6 py-16 text-center text-gray-400">
                     No bookings found
                   </td>
                 </tr>
               ) : (
-                bookings.map((b) => (
-                  <tr key={b.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 font-mono text-xs text-[#1A1A1A]">
-                      #BK-{b.id.slice(0, 4).toUpperCase()}
-                    </td>
-                    <td className="px-6 py-4 text-gray-700">{b.customer.fullName}</td>
-                    <td className="px-6 py-4 text-gray-700">{b.barber.user.fullName}</td>
-                    <td className="px-6 py-4 text-gray-600 whitespace-nowrap">
-                      {dateFmt.format(b.date)} · {b.startTime}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`inline-flex px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${
-                          statusStyle[b.status] ?? "bg-gray-100 text-gray-600"
-                        }`}
-                      >
-                        {b.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right text-[#1A1A1A] font-medium">
-                      £{(b.totalInPence / 100).toFixed(2)}
-                    </td>
-                  </tr>
+                serialized.map((b) => (
+                  <BookingRow key={b.id} booking={b} />
                 ))
               )}
             </tbody>
