@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { ArrowLeft } from "lucide-react";
+import BarberActions from "./BarberActions";
 
 const statusStyle: Record<string, string> = {
   APPROVED: "bg-green-100 text-green-700",
@@ -262,6 +263,12 @@ export default async function BarberDetailPage({
           </section>
         </div>
       </div>
+
+      <BarberActions
+        barberId={barber.id}
+        status={barber.status}
+        barberName={barber.user.fullName}
+      />
     </div>
   );
 }

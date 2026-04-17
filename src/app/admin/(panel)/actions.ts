@@ -22,6 +22,54 @@ export async function toggleBarberBlock(barberId: string, currentStatus: string)
     data: { status: newStatus },
   });
   revalidatePath("/admin/barbers");
+  revalidatePath(`/admin/barbers/${barberId}`);
+}
+
+export async function approveBarber(barberId: string) {
+  await requireAdmin();
+  await prisma.barberProfile.update({
+    where: { id: barberId },
+    data: { status: "APPROVED" },
+  });
+  revalidatePath("/admin/barbers");
+  revalidatePath(`/admin/barbers/${barberId}`);
+}
+
+export async function rejectBarber(barberId: string) {
+  await requireAdmin();
+  await prisma.barberProfile.update({
+    where: { id: barberId },
+    data: { status: "REJECTED" },
+  });
+  revalidatePath("/admin/barbers");
+  revalidatePath(`/admin/barbers/${barberId}`);
+}
+
+export async function resolveDispute(
+  reportId: string,
+  action: "UNDER_REVIEW" | "RESOLVE_REFUND" | "RESOLVE_NO_REFUND" | "REJECT",
+  adminNote?: string
+) {
+  const admin = await requireAdmin();
+
+  const statusMap = {
+    UNDER_REVIEW: "UNDER_REVIEW",
+    RESOLVE_REFUND: "RESOLVED_REFUNDED",
+    RESOLVE_NO_REFUND: "RESOLVED_NO_REFUND",
+    REJECT: "REJECTED",
+  } as const;
+
+  await prisma.report.update({
+    where: { id: reportId },
+    data: {
+      status: statusMap[action],
+      adminNote: adminNote || undefined,
+      resolvedById: action === "UNDER_REVIEW" ? null : admin.sub,
+      resolvedAt: action === "UNDER_REVIEW" ? null : new Date(),
+    },
+  });
+
+  revalidatePath("/admin/disputes");
 }
 
 export async function toggleUserBlock(userId: string, isCurrentlyBlocked: boolean) {
