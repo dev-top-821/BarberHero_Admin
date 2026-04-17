@@ -47,20 +47,20 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: Props) {
 
       <div
         className={`
-          fixed lg:static inset-y-0 left-0 z-40 h-full shrink-0
+          group fixed lg:static inset-y-0 left-0 z-40 h-full shrink-0
           w-60 ${collapsed ? "lg:w-20" : "lg:w-60"}
           transition-[transform,width] duration-200
           ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
           lg:translate-x-0
         `}
       >
-        {/* Desktop collapse/expand toggle */}
+        {/* Desktop collapse/expand toggle — only visible on sidebar hover */}
         <button
           type="button"
           onClick={toggle}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="hidden lg:flex absolute -right-3 top-8 z-50 w-6 h-6 rounded-full bg-[#2A2A2A] border border-white/30 text-white items-center justify-center shadow hover:bg-[#3A3A3A] hover:border-white/60 transition-colors cursor-pointer"
+          className="hidden lg:flex absolute -right-3 top-8 z-50 w-6 h-6 rounded-full bg-[#2A2A2A] border border-white/30 text-white items-center justify-center shadow hover:bg-[#3A3A3A] hover:border-white/60 transition-[opacity,background-color,border-color] duration-150 cursor-pointer opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
         >
           {collapsed ? (
             <ChevronRight className="w-3.5 h-3.5" />

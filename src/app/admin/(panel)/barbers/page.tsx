@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import BlockBarberButton from "./BlockBarberButton";
 
 const PAGE_SIZE = 10;
 
@@ -66,29 +67,41 @@ export default async function AdminBarbersPage({
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-4">
-      {/* Filter tabs */}
-      <div className="bg-white border border-gray-200 rounded-lg p-1 flex flex-wrap">
-        {FILTERS.map(({ value, label }) => {
-          const active = statusFilter === value;
-          return (
-            <Link
-              key={value}
-              href={
-                value === "ALL"
-                  ? "/admin/barbers"
-                  : `/admin/barbers?status=${value}`
-              }
-              className={`relative px-3 sm:px-6 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
-                active ? "text-[#D42B2B]" : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {label}
-              {active && (
-                <span className="absolute left-4 right-4 -bottom-px h-0.5 bg-[#D42B2B] rounded-t-full" />
-              )}
-            </Link>
-          );
-        })}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        {/* Filter tabs */}
+        <div className="bg-white border border-gray-200 rounded-lg p-1 flex flex-wrap">
+          {FILTERS.map(({ value, label }) => {
+            const active = statusFilter === value;
+            return (
+              <Link
+                key={value}
+                href={
+                  value === "ALL"
+                    ? "/admin/barbers"
+                    : `/admin/barbers?status=${value}`
+                }
+                className={`relative px-3 sm:px-6 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
+                  active ? "text-[#D42B2B]" : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {label}
+                {active && (
+                  <span className="absolute left-4 right-4 -bottom-px h-0.5 bg-[#D42B2B] rounded-t-full" />
+                )}
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* Search */}
+        <div className="relative sm:ml-auto w-full sm:w-64">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          <input
+            type="search"
+            placeholder="Search barbers..."
+            className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-[#1A1A1A] placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#D42B2B]"
+          />
+        </div>
       </div>
 
       {/* Table */}
@@ -163,12 +176,7 @@ export default async function AdminBarbersPage({
                     >
                       View
                     </Link>
-                    <button
-                      type="button"
-                      className="text-[#D42B2B] text-xs font-bold uppercase tracking-wider hover:underline"
-                    >
-                      {b.status === "BLOCKED" ? "Unblock" : "Block"}
-                    </button>
+                    <BlockBarberButton barberId={b.id} status={b.status} barberName={b.user.fullName} />
                   </td>
                 </tr>
               ))

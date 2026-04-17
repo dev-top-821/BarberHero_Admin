@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 
 const FILTERS = [
   { value: "ALL", label: "All" },
@@ -19,28 +19,39 @@ export default async function AdminDisputesPage({
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-4">
-      <div className="bg-white border border-gray-200 rounded-lg p-1 flex flex-wrap">
-        {FILTERS.map(({ value, label }) => {
-          const active = statusFilter === value;
-          return (
-            <Link
-              key={value}
-              href={
-                value === "ALL"
-                  ? "/admin/disputes"
-                  : `/admin/disputes?status=${value}`
-              }
-              className={`relative px-3 sm:px-6 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
-                active ? "text-[#D42B2B]" : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {label}
-              {active && (
-                <span className="absolute left-4 right-4 -bottom-px h-0.5 bg-[#D42B2B] rounded-t-full" />
-              )}
-            </Link>
-          );
-        })}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="bg-white border border-gray-200 rounded-lg p-1 flex flex-wrap">
+          {FILTERS.map(({ value, label }) => {
+            const active = statusFilter === value;
+            return (
+              <Link
+                key={value}
+                href={
+                  value === "ALL"
+                    ? "/admin/disputes"
+                    : `/admin/disputes?status=${value}`
+                }
+                className={`relative px-3 sm:px-6 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
+                  active ? "text-[#D42B2B]" : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {label}
+                {active && (
+                  <span className="absolute left-4 right-4 -bottom-px h-0.5 bg-[#D42B2B] rounded-t-full" />
+                )}
+              </Link>
+            );
+          })}
+        </div>
+
+        <div className="relative sm:ml-auto w-full sm:w-64">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          <input
+            type="search"
+            placeholder="Search disputes..."
+            className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-[#1A1A1A] placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#D42B2B]"
+          />
+        </div>
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">

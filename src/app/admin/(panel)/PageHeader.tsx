@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Bell, Menu, Search, X } from "lucide-react";
+import { Bell, Menu } from "lucide-react";
 
 type Meta = { title: string; subtitle: string };
 
@@ -58,17 +57,12 @@ export default function PageHeader({
   onMenuClick?: () => void;
 }) {
   const pathname = usePathname();
-  const [searchOpen, setSearchOpen] = useState(false);
-
-  useEffect(() => {
-    setSearchOpen(false);
-  }, [pathname]);
 
   const meta = resolveMeta(pathname);
   if (!meta) return null;
 
   return (
-    <header className="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex items-center gap-3 sm:gap-6">
+    <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex items-center gap-3 sm:gap-6">
       <button
         type="button"
         onClick={onMenuClick}
@@ -88,23 +82,6 @@ export default function PageHeader({
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3 ml-auto">
-        <div className="relative hidden md:block w-48 lg:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-          <input
-            type="search"
-            placeholder="Search..."
-            className="w-full pl-9 pr-3 py-2 bg-[#F5F5F5] rounded-lg text-sm text-[#1A1A1A] placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#D42B2B]"
-          />
-        </div>
-        <button
-          type="button"
-          aria-label="Search"
-          title="Search"
-          onClick={() => setSearchOpen(true)}
-          className="md:hidden p-2 text-gray-500 hover:text-[#1A1A1A] rounded-full hover:bg-gray-100 transition-colors"
-        >
-          <Search className="w-5 h-5" />
-        </button>
         <button
           type="button"
           aria-label="Notifications"
@@ -120,29 +97,6 @@ export default function PageHeader({
           {initials(user.fullName)}
         </div>
       </div>
-
-      {/* Mobile search overlay — covers the whole header when open */}
-      {searchOpen && (
-        <div className="md:hidden absolute inset-0 bg-white flex items-center gap-2 px-4 sm:px-6 z-10 border-b border-gray-200">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-            <input
-              type="search"
-              placeholder="Search..."
-              autoFocus
-              className="w-full pl-9 pr-3 py-2 bg-[#F5F5F5] rounded-lg text-sm text-[#1A1A1A] placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#D42B2B]"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => setSearchOpen(false)}
-            aria-label="Close search"
-            className="p-2 text-gray-500 hover:text-[#1A1A1A] rounded-full hover:bg-gray-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-      )}
     </header>
   );
 }
