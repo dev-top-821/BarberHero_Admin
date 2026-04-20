@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import { authenticateRequest, isAuthError, jsonResponse, errorResponse } from "@/lib/api-utils";
 
 export async function GET(request: NextRequest) {
@@ -19,6 +20,19 @@ export async function GET(request: NextRequest) {
 
     // Haversine distance calculation in SQL
     const radiusKm = radius * 1.60934;
+
+    // Optional filter: only barbers who offer at least one active service
+    // whose name contains the query (case-insensitive). Empty when no filter
+    // is requested so the rest of the query is unchanged.
+    const serviceFilter = service
+      ? Prisma.sql`AND EXISTS (
+          SELECT 1 FROM "Service" s
+          WHERE s."barberProfileId" = bp.id
+            AND s."isActive" = true
+            AND s.name ILIKE ${"%" + service + "%"}
+        )`
+      : Prisma.empty;
+
     const barbers = await prisma.$queryRaw`
       SELECT
         bp.id,
@@ -41,6 +55,7 @@ export async function GET(request: NextRequest) {
         AND u."isBlocked" = false
         AND bp.latitude IS NOT NULL
         AND bp.longitude IS NOT NULL
+        ${serviceFilter}
         AND (
           6371 * acos(
             cos(radians(${lat})) * cos(radians(bp.latitude))
@@ -52,8 +67,7 @@ export async function GET(request: NextRequest) {
       LIMIT 50
     `;
 
-    // TODO: Enrich with services, ratings, starting price
-    // TODO: Filter by service name if provided
+    // TODO: Enrich with ratings + starting price aggregates.
 
     return jsonResponse({ barbers });
   } catch {
