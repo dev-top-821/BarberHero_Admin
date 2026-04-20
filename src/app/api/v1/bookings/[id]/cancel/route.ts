@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest, isAuthError, jsonResponse, errorResponse } from "@/lib/api-utils";
+import { sendPushToUser } from "@/lib/push";
 
 export async function POST(
   request: NextRequest,
@@ -39,6 +40,15 @@ export async function POST(
     });
 
     // TODO: Refund Stripe payment hold
+
+    const otherUserId = isCustomer ? booking.barber.userId : booking.customerId;
+    void sendPushToUser(otherUserId, {
+      title: "Booking cancelled",
+      body: isCustomer
+        ? "The customer cancelled this booking."
+        : "The barber cancelled this booking.",
+      data: { type: "booking_status", bookingId: id, status: "CANCELLED" },
+    });
 
     return jsonResponse({ message: "Booking cancelled" });
   } catch {

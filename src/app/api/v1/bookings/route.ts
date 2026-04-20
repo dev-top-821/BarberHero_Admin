@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest, isAuthError, requireRole, jsonResponse, errorResponse } from "@/lib/api-utils";
+import { sendPushToUser } from "@/lib/push";
 
 // GET /api/v1/bookings — List bookings for current user (customer or barber)
 export async function GET(request: NextRequest) {
@@ -77,7 +78,17 @@ export async function POST(request: NextRequest) {
           })),
         },
       },
-      include: { services: { include: { service: true } } },
+      include: {
+        services: { include: { service: true } },
+        barber: { select: { userId: true } },
+        customer: { select: { fullName: true } },
+      },
+    });
+
+    void sendPushToUser(booking.barber.userId, {
+      title: "New booking request",
+      body: `${booking.customer.fullName} requested a booking on ${booking.startTime}.`,
+      data: { type: "booking_request", bookingId: booking.id },
     });
 
     return jsonResponse({ booking, stripeClientSecret }, 201);

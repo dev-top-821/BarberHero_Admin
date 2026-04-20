@@ -1,6 +1,15 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest, isAuthError, requireRole, jsonResponse, errorResponse } from "@/lib/api-utils";
+import { sendPushToUser } from "@/lib/push";
+
+const STATUS_TITLES: Record<string, string> = {
+  CONFIRMED: "Booking confirmed",
+  ON_THE_WAY: "Your barber is on the way",
+  STARTED: "Your appointment has started",
+  COMPLETED: "Appointment completed",
+  CANCELLED: "Booking cancelled",
+};
 
 // PATCH /api/v1/bookings/:id/status — Update booking status (barber only)
 export async function PATCH(
@@ -25,7 +34,7 @@ export async function PATCH(
 
     const booking = await prisma.booking.findUnique({
       where: { id },
-      select: { status: true },
+      select: { status: true, customerId: true },
     });
 
     if (!booking) {
@@ -51,10 +60,22 @@ export async function PATCH(
       await prisma.verificationCode.create({
         data: { bookingId: id, code },
       });
-      // TODO: Create chat room, charge platform fee, send push notification
+      // TODO: Create chat room, charge platform fee
     }
 
-    // TODO: Send push notification on status change
+    const title = STATUS_TITLES[status];
+    if (title) {
+      void sendPushToUser(booking.customerId, {
+        title,
+        body:
+          status === "CONFIRMED"
+            ? "Your booking has been accepted by the barber."
+            : status === "CANCELLED"
+            ? "The barber cancelled this booking."
+            : "Tap to view your booking.",
+        data: { type: "booking_status", bookingId: id, status },
+      });
+    }
 
     return jsonResponse({ booking: updated });
   } catch {
