@@ -58,9 +58,6 @@ export default async function BarberDetailPage({
           transactions: {
             orderBy: { createdAt: "desc" },
             take: 25,
-            include: {
-              booking: { select: { id: true } },
-            },
           },
         },
       },
