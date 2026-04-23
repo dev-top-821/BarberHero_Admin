@@ -54,13 +54,20 @@ export async function PATCH(
       data: { status },
     });
 
-    // On CONFIRMED: generate verification code and charge platform fee
+    // On CONFIRMED: generate the arrival code + open the chat room.
+    // Both are idempotent via the unique bookingId index, so a retry
+    // won't blow up.
     if (status === "CONFIRMED") {
       const code = Math.floor(1000 + Math.random() * 9000).toString();
       await prisma.verificationCode.create({
         data: { bookingId: id, code },
       });
-      // TODO: Create chat room, charge platform fee
+      await prisma.chatRoom
+        .create({ data: { bookingId: id } })
+        .catch(() => {
+          // Room may already exist if an earlier call half-succeeded —
+          // the unique constraint will catch it and we ignore.
+        });
     }
 
     const title = STATUS_TITLES[status];

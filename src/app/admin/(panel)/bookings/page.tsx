@@ -38,7 +38,18 @@ export default async function AdminBookingsPage({
         customer: { select: { fullName: true } },
         barber: { include: { user: { select: { fullName: true } } } },
         services: { include: { service: { select: { name: true } } } },
-        payment: { select: { status: true, stripePaymentIntentId: true } },
+        payment: {
+          select: {
+            status: true,
+            stripePaymentIntentId: true,
+            createdAt: true,
+            capturedAt: true,
+            heldUntil: true,
+            releasedAt: true,
+            refundedAt: true,
+            refundReason: true,
+          },
+        },
         verificationCode: { select: { code: true, isUsed: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -66,7 +77,16 @@ export default async function AdminBookingsPage({
       priceInPence: bs.priceInPence,
     })),
     payment: b.payment
-      ? { status: b.payment.status, stripePaymentIntentId: b.payment.stripePaymentIntentId }
+      ? {
+          status: b.payment.status,
+          stripePaymentIntentId: b.payment.stripePaymentIntentId,
+          createdAt: b.payment.createdAt.toISOString(),
+          capturedAt: b.payment.capturedAt?.toISOString() ?? null,
+          heldUntil: b.payment.heldUntil?.toISOString() ?? null,
+          releasedAt: b.payment.releasedAt?.toISOString() ?? null,
+          refundedAt: b.payment.refundedAt?.toISOString() ?? null,
+          refundReason: b.payment.refundReason,
+        }
       : null,
     verificationCode: b.verificationCode
       ? { code: b.verificationCode.code, isUsed: b.verificationCode.isUsed }

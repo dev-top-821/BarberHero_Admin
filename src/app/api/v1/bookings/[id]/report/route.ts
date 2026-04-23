@@ -98,6 +98,7 @@ export async function POST(
       raisedById: auth.id,
       category: parsed.data.category,
       description: parsed.data.description,
+      requestRefund: parsed.data.requestRefund ?? false,
       images: parsed.data.imageUrls
         ? { create: parsed.data.imageUrls.map((url) => ({ url })) }
         : undefined,

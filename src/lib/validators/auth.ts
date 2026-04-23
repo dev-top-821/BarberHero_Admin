@@ -1,11 +1,17 @@
 import { z } from "zod/v4";
 
-export const registerSchema = z.object({
-  email: z.email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-  fullName: z.string().min(1, "Full name is required"),
-  role: z.enum(["CUSTOMER", "BARBER"]),
-});
+export const registerSchema = z
+  .object({
+    email: z.email("Invalid email address"),
+    password: z.string().min(8, "Password must be at least 8 characters"),
+    fullName: z.string().min(1, "Full name is required"),
+    role: z.enum(["CUSTOMER", "BARBER"]),
+    postcode: z.string().trim().min(1).optional(),
+  })
+  .refine((data) => data.role !== "BARBER" || (data.postcode && data.postcode.length > 0), {
+    message: "Postcode is required for barbers",
+    path: ["postcode"],
+  });
 
 export const loginSchema = z.object({
   email: z.email("Invalid email address"),

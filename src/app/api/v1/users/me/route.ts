@@ -18,7 +18,13 @@ export async function GET(request: NextRequest) {
         role: true,
         createdAt: true,
         barberProfile: {
-          select: { id: true, status: true, isOnline: true },
+          select: {
+            id: true,
+            status: true,
+            isOnline: true,
+            rejectionReason: true,
+            submittedAt: true,
+          },
         },
       },
     });

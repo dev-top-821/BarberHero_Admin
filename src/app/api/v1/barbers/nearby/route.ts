@@ -1,12 +1,10 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import { authenticateRequest, isAuthError, jsonResponse, errorResponse } from "@/lib/api-utils";
+import { jsonResponse, errorResponse } from "@/lib/api-utils";
 
+// Public: guests browse the map before signing up.
 export async function GET(request: NextRequest) {
-  const auth = await authenticateRequest(request);
-  if (isAuthError(auth)) return auth;
-
   try {
     const { searchParams } = new URL(request.url);
     const lat = parseFloat(searchParams.get("latitude") ?? "0");
@@ -33,7 +31,20 @@ export async function GET(request: NextRequest) {
         )`
       : Prisma.empty;
 
-    const barbers = await prisma.$queryRaw`
+    type NearbyRow = {
+      id: string;
+      fullName: string;
+      profilePhoto: string | null;
+      isOnline: boolean;
+      latitude: number;
+      longitude: number;
+      distanceKm: number;
+      rating: number | null;
+      reviewCount: bigint;
+      startingPriceInPence: number | null;
+    };
+
+    const barbers = await prisma.$queryRaw<NearbyRow[]>`
       SELECT
         bp.id,
         u."fullName",
@@ -47,7 +58,22 @@ export async function GET(request: NextRequest) {
             * cos(radians(bp.longitude) - radians(${lng}))
             + sin(radians(${lat})) * sin(radians(bp.latitude))
           )
-        ) AS "distanceKm"
+        ) AS "distanceKm",
+        (
+          SELECT AVG(r.rating)::float
+          FROM "Review" r
+          WHERE r."barberProfileId" = bp.id
+        ) AS "rating",
+        (
+          SELECT COUNT(*)
+          FROM "Review" r
+          WHERE r."barberProfileId" = bp.id
+        ) AS "reviewCount",
+        (
+          SELECT MIN(s."priceInPence")
+          FROM "Service" s
+          WHERE s."barberProfileId" = bp.id AND s."isActive" = true
+        ) AS "startingPriceInPence"
       FROM "BarberProfile" bp
       JOIN "User" u ON bp."userId" = u.id
       WHERE bp.status = 'APPROVED'
@@ -67,9 +93,15 @@ export async function GET(request: NextRequest) {
       LIMIT 50
     `;
 
-    // TODO: Enrich with ratings + starting price aggregates.
+    // Postgres COUNT(*) comes back as bigint — stringify it for JSON
+    // transport and cast to number so Dart's NearbyBarber.reviewCount
+    // (int) parses without the `BigInt is not JSON serializable` error.
+    const serialized = barbers.map((b) => ({
+      ...b,
+      reviewCount: Number(b.reviewCount),
+    }));
 
-    return jsonResponse({ barbers });
+    return jsonResponse({ barbers: serialized });
   } catch {
     return errorResponse("SERVER_ERROR", "An unexpected error occurred", 500);
   }

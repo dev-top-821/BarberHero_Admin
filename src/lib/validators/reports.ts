@@ -10,6 +10,9 @@ export const createReportSchema = z.object({
   ]),
   description: z.string().min(10, "Please describe the issue (min 10 chars)").max(2000),
   imageUrls: z.array(z.url()).max(5).optional(),
+  // Customer explicitly asking for their money back. Flag drives the
+  // admin disputes queue: refund-requested reports bubble up.
+  requestRefund: z.boolean().optional(),
 });
 
 export const resolveReportSchema = z.object({

@@ -16,7 +16,9 @@ export async function GET(request: NextRequest) {
         services: { where: { isActive: true }, orderBy: { createdAt: "asc" } },
         photos: { orderBy: { order: "asc" } },
         settings: true,
-        wallet: { select: { balanceInPence: true } },
+        wallet: {
+          select: { id: true, availableInPence: true, pendingInPence: true },
+        },
       },
     });
 
@@ -24,7 +26,21 @@ export async function GET(request: NextRequest) {
       return errorResponse("NOT_FOUND", "Barber profile not found", 404);
     }
 
-    return jsonResponse({ profile });
+    // Aggregate rating + review count so the My Reviews preview card on
+    // the dashboard doesn't need a second round-trip.
+    const ratingAgg = await prisma.review.aggregate({
+      where: { barberProfileId: profile.id },
+      _avg: { rating: true },
+      _count: { rating: true },
+    });
+
+    return jsonResponse({
+      profile: {
+        ...profile,
+        rating: ratingAgg._avg.rating ?? 0,
+        reviewCount: ratingAgg._count.rating,
+      },
+    });
   } catch {
     return errorResponse("SERVER_ERROR", "An unexpected error occurred", 500);
   }
@@ -38,7 +54,7 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { bio, experience, address, latitude, longitude } = body;
+    const { bio, experience, address, latitude, longitude, postcode } = body;
 
     const profile = await prisma.barberProfile.update({
       where: { userId: auth.id },
@@ -48,6 +64,9 @@ export async function PATCH(request: NextRequest) {
         ...(address !== undefined && { address }),
         ...(latitude !== undefined && { latitude }),
         ...(longitude !== undefined && { longitude }),
+        ...(postcode !== undefined && {
+          postcode: typeof postcode === "string" ? postcode.trim().toUpperCase() : postcode,
+        }),
       },
     });
 

@@ -16,6 +16,7 @@ enum UserRole {
 }
 
 enum BarberStatus {
+  INCOMPLETE
   PENDING
   APPROVED
   REJECTED
@@ -33,17 +34,20 @@ enum BookingStatus {
 
 enum PaymentStatus {
   HELD
+  PENDING_RELEASE
   RELEASED
   REFUNDED
   FAILED
 }
 
 enum TransactionType {
+  PENDING_CREDIT
   EARNING
   PLATFORM_FEE
   PAYOUT
   INSTANT_WITHDRAWAL
   WITHDRAWAL_FEE
+  REFUND_REVERSAL
 }
 
 enum ReportCategory {
@@ -104,11 +108,14 @@ model BarberProfile {
   user      User         @relation(fields: [userId], references: [id])
   bio       String?
   experience String?
-  status    BarberStatus @default(PENDING)
+  status    BarberStatus @default(INCOMPLETE)
+  rejectionReason String?
+  submittedAt DateTime?
   isOnline  Boolean      @default(false)
   latitude  Float?
   longitude Float?
   address   String?
+  postcode  String?
   termsAcceptedAt DateTime?
   termsVersion    String?
   createdAt DateTime     @default(now())
@@ -132,6 +139,7 @@ model BarberPhoto {
   barberProfileId String
   barberProfile   BarberProfile @relation(fields: [barberProfileId], references: [id], onDelete: Cascade)
   url             String
+  storagePath     String?
   order           Int           @default(0)
   createdAt       DateTime      @default(now())
 
@@ -251,11 +259,15 @@ model Payment {
 // ─── WALLET ───────────────────────────────────────
 
 model Wallet {
-  id              String        @id @default(uuid())
-  barberProfileId String        @unique
-  barberProfile   BarberProfile @relation(fields: [barberProfileId], references: [id])
-  balanceInPence  Int           @default(0)
-  updatedAt       DateTime      @updatedAt
+  id                String        @id @default(uuid())
+  barberProfileId   String        @unique
+  barberProfile     BarberProfile @relation(fields: [barberProfileId], references: [id])
+  // Two-bucket model: captured funds sit in `pending` for 24h after the
+  // verification code is entered, then move to `available` when the release
+  // worker runs. Only `available` can be withdrawn.
+  availableInPence  Int           @default(0)
+  pendingInPence    Int           @default(0)
+  updatedAt         DateTime      @updatedAt
 
   transactions WalletTransaction[]
 }
@@ -281,6 +293,11 @@ model ChatRoom {
   bookingId String   @unique
   booking   Booking  @relation(fields: [bookingId], references: [id])
   createdAt DateTime @default(now())
+  // Last time each party opened the conversation. Used to compute
+  // unread counts in the inbox and "Seen" markers on sent messages.
+  // Null = never opened — treat every incoming message as unread.
+  customerLastReadAt DateTime?
+  barberLastReadAt   DateTime?
 
   messages ChatMessage[]
 }
@@ -306,6 +323,9 @@ model Report {
   raisedById      String
   category        ReportCategory
   description     String
+  // Set when the customer is asking for their money back — surfaces a
+  // "request refund" badge in the admin disputes panel.
+  requestRefund   Boolean        @default(false)
   status          ReportStatus   @default(OPEN)
   adminNote       String?
   resolvedById    String?

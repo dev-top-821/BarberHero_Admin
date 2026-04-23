@@ -50,7 +50,20 @@ export default async function BarberDetailPage({
       availability: { orderBy: { dayOfWeek: "asc" } },
       photos: { orderBy: { order: "asc" } },
       settings: true,
-      wallet: { select: { balanceInPence: true } },
+      wallet: {
+        select: {
+          id: true,
+          availableInPence: true,
+          pendingInPence: true,
+          transactions: {
+            orderBy: { createdAt: "desc" },
+            take: 25,
+            include: {
+              booking: { select: { id: true } },
+            },
+          },
+        },
+      },
       _count: { select: { bookings: true, reviews: true } },
     },
   });
@@ -179,6 +192,50 @@ export default async function BarberDetailPage({
             )}
           </section>
 
+          {/* Wallet ledger */}
+          <section className="bg-white rounded-lg border border-gray-200 p-6">
+            <h3 className="text-base font-semibold text-[#1A1A1A] mb-4">
+              Recent wallet activity
+            </h3>
+            {!barber.wallet || barber.wallet.transactions.length === 0 ? (
+              <p className="text-sm text-gray-400">No transactions yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs text-gray-500 uppercase tracking-wider">
+                    <tr className="border-b border-gray-100">
+                      <th className="pb-2 font-medium">Date</th>
+                      <th className="pb-2 font-medium">Type</th>
+                      <th className="pb-2 font-medium">Description</th>
+                      <th className="pb-2 font-medium text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {barber.wallet.transactions.map((tx) => {
+                      const negative = _isNegative(tx.type);
+                      return (
+                        <tr key={tx.id}>
+                          <td className="py-2 text-gray-500 whitespace-nowrap">
+                            {dateFmt.format(tx.createdAt)}
+                          </td>
+                          <td className="py-2">
+                            <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${_txStyle(tx.type)}`}>
+                              {_txLabel(tx.type)}
+                            </span>
+                          </td>
+                          <td className="py-2 text-gray-600">{tx.description ?? "—"}</td>
+                          <td className={`py-2 text-right font-semibold ${negative ? "text-gray-600" : "text-emerald-600"}`}>
+                            {negative ? "−" : "+"}£{(tx.amountInPence / 100).toFixed(2)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
           {/* Availability */}
           <section className="bg-white rounded-lg border border-gray-200 p-6">
             <h3 className="text-base font-semibold text-[#1A1A1A] mb-4">Availability</h3>
@@ -220,9 +277,15 @@ export default async function BarberDetailPage({
                 <span className="font-semibold text-[#1A1A1A]">{barber._count.reviews}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Wallet balance</span>
+                <span className="text-gray-500">Available</span>
                 <span className="font-semibold text-[#1A1A1A]">
-                  £{((barber.wallet?.balanceInPence ?? 0) / 100).toFixed(2)}
+                  £{((barber.wallet?.availableInPence ?? 0) / 100).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Pending</span>
+                <span className="font-semibold text-amber-600">
+                  £{((barber.wallet?.pendingInPence ?? 0) / 100).toFixed(2)}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -271,4 +334,46 @@ export default async function BarberDetailPage({
       />
     </div>
   );
+}
+
+// ── Wallet transaction helpers ──
+
+function _isNegative(type: string): boolean {
+  return (
+    type === "PLATFORM_FEE" ||
+    type === "INSTANT_WITHDRAWAL" ||
+    type === "WITHDRAWAL_FEE" ||
+    type === "REFUND_REVERSAL" ||
+    type === "PAYOUT"
+  );
+}
+
+function _txLabel(type: string): string {
+  switch (type) {
+    case "PENDING_CREDIT": return "Pending";
+    case "EARNING": return "Earning";
+    case "PLATFORM_FEE": return "Fee";
+    case "PAYOUT": return "Payout";
+    case "INSTANT_WITHDRAWAL": return "Withdrawal";
+    case "WITHDRAWAL_FEE": return "Withdraw fee";
+    case "REFUND_REVERSAL": return "Refund";
+    default: return type;
+  }
+}
+
+function _txStyle(type: string): string {
+  switch (type) {
+    case "PENDING_CREDIT": return "bg-amber-100 text-amber-700";
+    case "EARNING": return "bg-emerald-100 text-emerald-700";
+    case "PLATFORM_FEE": return "bg-gray-100 text-gray-600";
+    case "INSTANT_WITHDRAWAL":
+    case "PAYOUT":
+      return "bg-indigo-100 text-indigo-700";
+    case "WITHDRAWAL_FEE":
+      return "bg-gray-100 text-gray-600";
+    case "REFUND_REVERSAL":
+      return "bg-red-100 text-red-700";
+    default:
+      return "bg-gray-100 text-gray-600";
+  }
 }

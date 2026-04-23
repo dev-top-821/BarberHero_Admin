@@ -43,6 +43,7 @@ type DisputeData = {
   category: string;
   description: string;
   status: string;
+  requestRefund: boolean;
   adminNote: string | null;
   createdAt: string;
   resolvedAt: string | null;
@@ -122,6 +123,14 @@ export default function DisputeRow({ dispute: d }: { dispute: DisputeData }) {
             <CatIcon className="w-3.5 h-3.5" />
             {d.category.replace(/_/g, " ")}
           </span>
+          {d.requestRefund && (
+            <span
+              className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-50 text-[#D42B2B] border border-[#D42B2B]/20"
+              title="Customer has requested a refund"
+            >
+              Refund requested
+            </span>
+          )}
         </td>
         <td className="px-6 py-4">
           <span

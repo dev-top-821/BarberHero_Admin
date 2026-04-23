@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       return errorResponse("INVALID_INPUT", parsed.error.issues[0].message);
     }
 
-    const { email, password, fullName, role } = parsed.data;
+    const { email, password, fullName, role, postcode } = parsed.data;
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
         ...(role === "BARBER" && {
           barberProfile: {
             create: {
+              postcode: postcode!.trim().toUpperCase(),
               settings: { create: {} },
               wallet: { create: {} },
             },

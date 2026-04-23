@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { authenticateRequest, isAuthError, jsonResponse, errorResponse } from "@/lib/api-utils";
+import { jsonResponse, errorResponse } from "@/lib/api-utils";
 
 const DAYS_MAP: Record<number, string> = {
   0: "SUNDAY",
@@ -29,13 +29,11 @@ function generateTimeSlots(start: string, end: string, intervalMin: number): str
   return slots;
 }
 
+// Public: guests pick a date/time before the register wall on payment.
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await authenticateRequest(request);
-  if (isAuthError(auth)) return auth;
-
   try {
     const { id } = await params;
     const { searchParams } = new URL(request.url);

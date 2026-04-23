@@ -10,11 +10,20 @@ import {
 } from "@/lib/api-utils";
 import { sendPushToUser } from "@/lib/push";
 
-// POST /api/v1/bookings/:id/verify — Enter verification code (barber only)
+const HOLD_DURATION_MS = 24 * 60 * 60 * 1000;
+
+// POST /api/v1/bookings/:id/verify — Barber enters the customer's 4-digit
+// arrival code.
 //
-// On success: captures the previously-authorized Stripe PaymentIntent,
-// credits the barber's wallet with (amount - platform fee), and flips the
-// booking to COMPLETED.
+// Semantics (client spec): code entry is the start-of-service trigger.
+//   - Stripe PaymentIntent is captured (funds move to platform balance).
+//   - Booking flips PENDING/CONFIRMED → STARTED.
+//   - Payment flips HELD → PENDING_RELEASE with heldUntil = now + 24h.
+//   - Wallet.pendingInPence += barberAmount (not spendable yet).
+//   - A release cron collapses pending → available after 24h.
+//   - During that 24h window the customer can file a report + request a
+//     refund via /bookings/:id/report; admin resolves it from the disputes
+//     panel.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -31,15 +40,12 @@ export async function POST(
     const verification = await prisma.verificationCode.findUnique({
       where: { bookingId: id },
     });
-
     if (!verification) {
       return errorResponse("NOT_FOUND", "Verification code not found", 404);
     }
-
     if (verification.isUsed) {
       return errorResponse("ALREADY_USED", "Code has already been used");
     }
-
     if (verification.code !== code) {
       return errorResponse("INVALID_CODE", "Invalid verification code");
     }
@@ -47,11 +53,9 @@ export async function POST(
     const payment = await prisma.payment.findUnique({
       where: { bookingId: id },
     });
-
     if (!payment) {
       return errorResponse("INVALID_STATE", "No payment on this booking", 409);
     }
-
     if (payment.status !== "HELD") {
       return errorResponse(
         "INVALID_STATE",
@@ -60,8 +64,7 @@ export async function POST(
       );
     }
 
-    // Capture the authorized PaymentIntent. If Stripe rejects, abort — we
-    // don't want to complete the booking without money in hand.
+    // Capture first — if Stripe fails, we don't want to touch the DB.
     try {
       await stripe.paymentIntents.capture(payment.stripePaymentIntentId);
     } catch {
@@ -69,70 +72,80 @@ export async function POST(
     }
 
     const now = new Date();
+    const heldUntil = new Date(now.getTime() + HOLD_DURATION_MS);
 
-    // Use a transaction so verification, booking, payment, wallet and ledger
-    // entry all move together — a partial commit would leave the wallet
-    // out of sync with the captured funds.
     const [, updatedBooking] = await prisma.$transaction(async (tx) => {
       await tx.verificationCode.update({
         where: { id: verification.id },
         data: { isUsed: true },
       });
+
       const booking = await tx.booking.update({
         where: { id },
-        data: { status: "COMPLETED" },
+        data: { status: "STARTED" },
         select: { customerId: true, barberId: true },
       });
+
       await tx.payment.update({
         where: { id: payment.id },
         data: {
-          status: "RELEASED",
+          status: "PENDING_RELEASE",
           capturedAt: now,
-          releasedAt: now,
+          heldUntil,
         },
       });
 
-      // Upsert wallet on first earning, then credit and write ledger.
+      // Upsert wallet — first earning creates it on demand.
       const wallet = await tx.wallet.upsert({
         where: { barberProfileId: booking.barberId },
         create: {
           barberProfileId: booking.barberId,
-          balanceInPence: payment.barberAmountInPence,
+          pendingInPence: payment.barberAmountInPence,
         },
         update: {
-          balanceInPence: { increment: payment.barberAmountInPence },
+          pendingInPence: { increment: payment.barberAmountInPence },
         },
       });
 
       await tx.walletTransaction.create({
         data: {
           walletId: wallet.id,
-          type: "EARNING",
+          type: "PENDING_CREDIT",
           amountInPence: payment.barberAmountInPence,
           bookingId: id,
-          description: "Booking completed",
-        },
-      });
-      await tx.walletTransaction.create({
-        data: {
-          walletId: wallet.id,
-          type: "PLATFORM_FEE",
-          amountInPence: payment.platformFeeInPence,
-          bookingId: id,
-          description: "Platform fee",
+          description: "Service started — pending release",
         },
       });
 
       return [null, booking] as const;
     });
 
-    void sendPushToUser(updatedBooking.customerId, {
-      title: "Appointment completed",
-      body: "Thanks! Tap to leave a review.",
-      data: { type: "booking_status", bookingId: id, status: "COMPLETED" },
+    // Get the barber's userId for the push.
+    const barber = await prisma.barberProfile.findUnique({
+      where: { id: updatedBooking.barberId },
+      select: { userId: true },
     });
 
-    return jsonResponse({ success: true });
+    const pounds = (payment.barberAmountInPence / 100).toFixed(2);
+
+    if (barber) {
+      void sendPushToUser(barber.userId, {
+        title: "Service started",
+        body: `£${pounds} added to your wallet as pending. It will be released in 24 hours.`,
+        data: { type: "booking_status", bookingId: id, status: "STARTED" },
+      });
+    }
+    void sendPushToUser(updatedBooking.customerId, {
+      title: "Your appointment has started",
+      body: "You can report an issue within 24 hours if anything goes wrong.",
+      data: { type: "booking_status", bookingId: id, status: "STARTED" },
+    });
+
+    return jsonResponse({
+      success: true,
+      status: "STARTED",
+      heldUntil: heldUntil.toISOString(),
+    });
   } catch {
     return errorResponse("SERVER_ERROR", "An unexpected error occurred", 500);
   }

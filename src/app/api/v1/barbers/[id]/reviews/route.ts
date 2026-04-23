@@ -1,14 +1,12 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { authenticateRequest, isAuthError, jsonResponse, errorResponse } from "@/lib/api-utils";
+import { jsonResponse, errorResponse } from "@/lib/api-utils";
 
+// Public: reviews are part of the browse experience.
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await authenticateRequest(request);
-  if (isAuthError(auth)) return auth;
-
   try {
     const { id } = await params;
 

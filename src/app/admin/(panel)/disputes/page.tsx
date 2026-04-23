@@ -61,6 +61,7 @@ export default async function AdminDisputesPage({
     category: r.category,
     description: r.description,
     status: r.status,
+    requestRefund: r.requestRefund,
     adminNote: r.adminNote,
     createdAt: dateFmt.format(r.createdAt),
     resolvedAt: r.resolvedAt ? dateFmt.format(r.resolvedAt) : null,

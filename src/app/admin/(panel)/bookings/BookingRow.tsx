@@ -29,9 +29,34 @@ type BookingData = {
   customerName: string;
   barberName: string;
   services: { name: string; priceInPence: number }[];
-  payment: { status: string; stripePaymentIntentId: string } | null;
+  payment: {
+    status: string;
+    stripePaymentIntentId: string;
+    createdAt: string;
+    capturedAt: string | null;
+    heldUntil: string | null;
+    releasedAt: string | null;
+    refundedAt: string | null;
+    refundReason: string | null;
+  } | null;
   verificationCode: { code: string; isUsed: boolean } | null;
 };
+
+const tsFmt = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+function fmtTs(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  try {
+    return tsFmt.format(new Date(iso));
+  } catch {
+    return null;
+  }
+}
 
 export default function BookingRow({ booking: b }: { booking: BookingData }) {
   const [expanded, setExpanded] = useState(false);
@@ -140,41 +165,34 @@ export default function BookingRow({ booking: b }: { booking: BookingData }) {
                   </div>
                 </div>
 
-                {/* Payment & Verification */}
+                {/* Payment timeline & verification */}
                 <div>
                   <h4 className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-3">
-                    Payment & verification
+                    Payment timeline
                   </h4>
-                  <div className="space-y-3">
-                    {paymentInfo ? (
-                      <div className="flex items-start gap-2">
-                        <PaymentIcon className={`w-5 h-5 shrink-0 mt-0.5 ${paymentInfo.color}`} />
-                        <div>
-                          <p className="text-sm font-medium text-[#1A1A1A]">
-                            {paymentInfo.label}
-                          </p>
-                          <p className="text-[10px] text-gray-500 uppercase tracking-wider">
-                            Stripe Auth {b.payment!.status === "HELD" || b.payment!.status === "RELEASED" ? "Success" : b.payment!.status}
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-400">No payment recorded</p>
-                    )}
+                  {b.payment ? (
+                    <PaymentTimeline payment={b.payment} />
+                  ) : (
+                    <p className="text-sm text-gray-400">No payment recorded</p>
+                  )}
 
+                  <div className="mt-4">
+                    <h4 className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">
+                      Verification
+                    </h4>
                     {b.verificationCode ? (
                       <div className="flex items-start gap-2">
                         {b.verificationCode.isUsed ? (
-                          <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                          <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0 mt-0.5" />
                         ) : (
-                          <Clock className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                          <Clock className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                         )}
                         <div>
-                          <p className="text-sm font-medium text-[#1A1A1A]">
-                            {b.verificationCode.isUsed ? "Verified" : "Verification Pending"}
+                          <p className="text-sm text-[#1A1A1A]">
+                            {b.verificationCode.isUsed ? "Code used" : "Awaiting code"}
                           </p>
-                          <p className="text-[10px] text-gray-500 uppercase tracking-wider">
-                            Code: BH-{b.verificationCode.code}
+                          <p className="text-[10px] text-gray-500 font-mono">
+                            {b.verificationCode.code}
                           </p>
                         </div>
                       </div>
@@ -189,5 +207,103 @@ export default function BookingRow({ booking: b }: { booking: BookingData }) {
         </tr>
       )}
     </>
+  );
+}
+
+// Payment timeline — vertical list of state transitions with timestamps.
+// Derived entirely from Payment columns (createdAt, capturedAt, heldUntil,
+// releasedAt, refundedAt); no separate event log table.
+function PaymentTimeline({
+  payment,
+}: {
+  payment: NonNullable<BookingData["payment"]>;
+}) {
+  type Step = {
+    label: string;
+    ts: string | null;
+    description?: string;
+    accent?: "ok" | "warn" | "err";
+    future?: boolean;
+  };
+
+  const steps: Step[] = [];
+
+  steps.push({
+    label: "Payment authorised",
+    ts: fmtTs(payment.createdAt),
+    description: "Funds held on card",
+    accent: "ok",
+  });
+
+  if (payment.capturedAt) {
+    steps.push({
+      label: "Captured",
+      ts: fmtTs(payment.capturedAt),
+      description: "Moved to platform balance",
+      accent: "ok",
+    });
+  }
+
+  if (payment.heldUntil && !payment.releasedAt && !payment.refundedAt) {
+    const released = fmtTs(payment.heldUntil);
+    steps.push({
+      label: "Release scheduled",
+      ts: released,
+      description: "Pending → available",
+      accent: "warn",
+      future: true,
+    });
+  }
+
+  if (payment.releasedAt) {
+    steps.push({
+      label: "Released",
+      ts: fmtTs(payment.releasedAt),
+      description: "Credited to barber's wallet",
+      accent: "ok",
+    });
+  }
+
+  if (payment.refundedAt) {
+    steps.push({
+      label: "Refunded",
+      ts: fmtTs(payment.refundedAt),
+      description: payment.refundReason ?? "Returned to customer",
+      accent: "err",
+    });
+  }
+
+  return (
+    <ol className="space-y-2.5">
+      {steps.map((s, i) => {
+        const dot =
+          s.future
+            ? "border-amber-400 bg-white"
+            : s.accent === "err"
+              ? "bg-red-500 border-red-500"
+              : s.accent === "warn"
+                ? "bg-amber-400 border-amber-400"
+                : "bg-green-500 border-green-500";
+        const line = i === steps.length - 1 ? "" : "after:absolute after:left-[5px] after:top-3 after:bottom-[-10px] after:w-px after:bg-gray-200";
+        return (
+          <li key={i} className={`relative pl-6 ${line}`}>
+            <span
+              className={`absolute left-0 top-1 w-2.75 h-2.75 rounded-full border-2 ${dot}`}
+            />
+            <div className="flex items-baseline justify-between gap-2">
+              <p className={`text-sm font-semibold text-[#1A1A1A] ${s.future ? "italic text-gray-500" : ""}`}>
+                {s.label}
+              </p>
+              {s.ts && (
+                <p className="text-[11px] text-gray-500 whitespace-nowrap">{s.ts}</p>
+              )}
+            </div>
+            {s.description && (
+              <p className="text-xs text-gray-500 mt-0.5">{s.description}</p>
+            )}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
