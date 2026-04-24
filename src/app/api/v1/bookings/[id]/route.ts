@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest, isAuthError, jsonResponse, errorResponse } from "@/lib/api-utils";
+import { redactPhonesByStatus } from "@/lib/booking-privacy";
 
 export async function GET(
   request: NextRequest,
@@ -17,7 +18,9 @@ export async function GET(
       include: {
         customer: { select: { fullName: true, profilePhoto: true, phone: true } },
         barber: {
-          include: { user: { select: { fullName: true, profilePhoto: true } } },
+          include: {
+            user: { select: { fullName: true, profilePhoto: true, phone: true } },
+          },
         },
         services: { include: { service: true } },
         payment: true,
@@ -31,7 +34,7 @@ export async function GET(
       return errorResponse("NOT_FOUND", "Booking not found", 404);
     }
 
-    return jsonResponse({ booking });
+    return jsonResponse({ booking: redactPhonesByStatus(booking) });
   } catch {
     return errorResponse("SERVER_ERROR", "An unexpected error occurred", 500);
   }

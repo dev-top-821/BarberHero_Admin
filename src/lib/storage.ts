@@ -26,6 +26,24 @@ export function isAllowedImageType(contentType: string): boolean {
 export const PHOTOS_DIR = resolve(process.env.PHOTOS_DIR ?? "./uploads");
 
 /**
+ * Mapping of upload kind → root folder under PHOTOS_DIR. Keeps the path
+ * layout consistent across the three upload surfaces we serve.
+ */
+const KIND_FOLDER: Record<
+  "profile" | "portfolio" | "user" | "report",
+  string
+> = {
+  // Barber face photo + portfolio + customer avatars all live together
+  // under `barber-photos/` so they share a single top-level directory.
+  profile: "barber-photos",
+  portfolio: "barber-photos",
+  user: "barber-photos",
+  // Report evidence lives separately — easier to clean up and the path
+  // reflects purpose.
+  report: "report-images",
+};
+
+/**
  * Persist an uploaded file to the photos disk. Returns a disk-relative
  * path like `barber-photos/{userId}/profile-{uuid}.jpg` and the public URL
  * that the app can render directly (served by GET /api/v1/photos/[...path]).
@@ -33,14 +51,14 @@ export const PHOTOS_DIR = resolve(process.env.PHOTOS_DIR ?? "./uploads");
 export async function saveToDisk(params: {
   bytes: Uint8Array;
   userId: string;
-  kind: "profile" | "portfolio" | "user";
+  kind: "profile" | "portfolio" | "user" | "report";
   contentType: string;
   origin: string;
 }): Promise<{ storagePath: string; url: string }> {
   const ext = extensionFor(params.contentType);
   const id = randomUUID();
   const filename = `${params.kind}-${id}.${ext}`;
-  const subdir = join("barber-photos", params.userId);
+  const subdir = join(KIND_FOLDER[params.kind], params.userId);
 
   const destDir = join(PHOTOS_DIR, subdir);
   await mkdir(destDir, { recursive: true });

@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   FileJson,
   PoundSterling,
+  Banknote,
   type LucideIcon,
 } from "lucide-react";
 
@@ -25,6 +26,7 @@ const items: Item[] = [
   { href: "/admin/users", label: "Users", Icon: Users },
   { href: "/admin/bookings", label: "Bookings", Icon: CalendarCheck },
   { href: "/admin/revenue", label: "Revenue", Icon: PoundSterling },
+  { href: "/admin/withdrawals", label: "Payouts", Icon: Banknote },
   { href: "/admin/disputes", label: "Disputes", Icon: AlertTriangle },
   { href: "/admin/docs", label: "API Docs", Icon: FileJson },
 ];

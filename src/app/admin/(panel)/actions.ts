@@ -219,3 +219,141 @@ export async function toggleUserBlock(userId: string, isCurrentlyBlocked: boolea
   });
   revalidatePath("/admin/users");
 }
+
+const MIN_BANK_REFERENCE_CHARS = 4;
+const MIN_FAILURE_REASON_CHARS = 10;
+
+export async function markWithdrawalProcessing(withdrawalId: string) {
+  const admin = await requireAdmin();
+  const existing = await prisma.withdrawalRequest.findUnique({
+    where: { id: withdrawalId },
+  });
+  if (!existing) throw new Error("Withdrawal not found");
+  if (existing.status !== "REQUESTED") {
+    throw new Error(`Cannot move ${existing.status} → PROCESSING`);
+  }
+  await prisma.withdrawalRequest.update({
+    where: { id: withdrawalId },
+    data: { status: "PROCESSING", processedById: admin.sub },
+  });
+  revalidatePath("/admin/withdrawals");
+}
+
+export async function markWithdrawalPaid(
+  withdrawalId: string,
+  bankReference: string,
+  adminNote?: string
+) {
+  const admin = await requireAdmin();
+  const ref = (bankReference ?? "").trim();
+  if (ref.length < MIN_BANK_REFERENCE_CHARS) {
+    throw new Error(
+      `Bank reference is required (at least ${MIN_BANK_REFERENCE_CHARS} characters).`
+    );
+  }
+
+  const existing = await prisma.withdrawalRequest.findUnique({
+    where: { id: withdrawalId },
+    include: {
+      wallet: {
+        include: {
+          barberProfile: { select: { user: { select: { id: true } } } },
+        },
+      },
+    },
+  });
+  if (!existing) throw new Error("Withdrawal not found");
+  if (existing.status !== "REQUESTED" && existing.status !== "PROCESSING") {
+    throw new Error(`Cannot mark ${existing.status} as paid.`);
+  }
+
+  await prisma.withdrawalRequest.update({
+    where: { id: withdrawalId },
+    data: {
+      status: "COMPLETED",
+      bankReference: ref,
+      adminNote: adminNote?.trim() || existing.adminNote,
+      processedById: admin.sub,
+      processedAt: new Date(),
+    },
+  });
+
+  void sendPushToUser(existing.wallet.barberProfile.user.id, {
+    title: "Withdrawal sent",
+    body: `£${(existing.netInPence / 100).toFixed(2)} has been sent to your bank. Expect it within 2 business days.`,
+    data: {
+      type: "withdrawal",
+      withdrawalId,
+      status: "COMPLETED",
+    },
+  });
+
+  revalidatePath("/admin/withdrawals");
+}
+
+export async function markWithdrawalFailed(
+  withdrawalId: string,
+  reason: string
+) {
+  const admin = await requireAdmin();
+  const trimmed = (reason ?? "").trim();
+  if (trimmed.length < MIN_FAILURE_REASON_CHARS) {
+    throw new Error(
+      `Please provide a failure reason of at least ${MIN_FAILURE_REASON_CHARS} characters.`
+    );
+  }
+
+  const existing = await prisma.withdrawalRequest.findUnique({
+    where: { id: withdrawalId },
+    include: {
+      wallet: {
+        include: {
+          barberProfile: { select: { user: { select: { id: true } } } },
+        },
+      },
+    },
+  });
+  if (!existing) throw new Error("Withdrawal not found");
+  if (existing.status === "COMPLETED" || existing.status === "FAILED") {
+    throw new Error(`Cannot fail a ${existing.status} withdrawal.`);
+  }
+
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    // Reverse the wallet debit — available balance restored, with a
+    // WITHDRAWAL_REVERSAL ledger row so the history explains the swing.
+    await tx.wallet.update({
+      where: { id: existing.walletId },
+      data: { availableInPence: { increment: existing.amountInPence } },
+    });
+    await tx.walletTransaction.create({
+      data: {
+        walletId: existing.walletId,
+        type: "WITHDRAWAL_REVERSAL",
+        amountInPence: existing.amountInPence,
+        description: `Withdrawal failed: ${trimmed}`,
+      },
+    });
+    await tx.withdrawalRequest.update({
+      where: { id: withdrawalId },
+      data: {
+        status: "FAILED",
+        adminNote: trimmed,
+        processedById: admin.sub,
+        processedAt: now,
+      },
+    });
+  });
+
+  void sendPushToUser(existing.wallet.barberProfile.user.id, {
+    title: "Withdrawal failed",
+    body: `We couldn't process your £${(existing.amountInPence / 100).toFixed(2)} withdrawal. Funds are back in your available balance.`,
+    data: {
+      type: "withdrawal",
+      withdrawalId,
+      status: "FAILED",
+    },
+  });
+
+  revalidatePath("/admin/withdrawals");
+}

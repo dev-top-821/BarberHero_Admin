@@ -22,6 +22,20 @@ export async function GET(request: NextRequest) {
       where: { barberProfileId: profile.id },
       include: {
         transactions: { orderBy: { createdAt: "desc" }, take: 20 },
+        withdrawalRequests: {
+          orderBy: { createdAt: "desc" },
+          take: 10,
+          select: {
+            id: true,
+            amountInPence: true,
+            feeInPence: true,
+            netInPence: true,
+            status: true,
+            bankReference: true,
+            createdAt: true,
+            processedAt: true,
+          },
+        },
       },
     });
 

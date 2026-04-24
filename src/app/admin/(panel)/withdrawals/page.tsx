@@ -1,25 +1,26 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import BookingRow from "./BookingRow";
+import WithdrawalRow from "./WithdrawalRow";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 15;
 
 const FILTERS = [
   { value: "ALL", label: "All" },
-  { value: "PENDING", label: "Pending" },
-  { value: "CONFIRMED", label: "Confirmed" },
+  { value: "REQUESTED", label: "Requested" },
+  { value: "PROCESSING", label: "Processing" },
   { value: "COMPLETED", label: "Completed" },
-  { value: "CANCELLED", label: "Cancelled" },
+  { value: "FAILED", label: "Failed" },
 ] as const;
 
-const dateFmt = new Intl.DateTimeFormat("en-US", {
-  month: "short",
+const dateFmt = new Intl.DateTimeFormat("en-GB", {
   day: "2-digit",
-  year: "numeric",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
 });
 
-export default async function AdminBookingsPage({
+export default async function AdminWithdrawalsPage({
   searchParams,
 }: {
   searchParams: Promise<{ status?: string; page?: string }>;
@@ -31,72 +32,49 @@ export default async function AdminBookingsPage({
   const where =
     statusFilter !== "ALL" ? { status: statusFilter as never } : {};
 
-  const [bookings, total] = await Promise.all([
-    prisma.booking.findMany({
+  const [requests, total, pendingCount] = await Promise.all([
+    prisma.withdrawalRequest.findMany({
       where,
-      include: {
-        customer: { select: { fullName: true, profilePhoto: true } },
-        barber: {
-          include: {
-            user: { select: { fullName: true, profilePhoto: true } },
-          },
-        },
-        services: { include: { service: { select: { name: true } } } },
-        payment: {
-          select: {
-            status: true,
-            stripePaymentIntentId: true,
-            createdAt: true,
-            capturedAt: true,
-            heldUntil: true,
-            releasedAt: true,
-            refundedAt: true,
-            refundReason: true,
-          },
-        },
-        verificationCode: { select: { code: true, isUsed: true } },
-      },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
+      include: {
+        wallet: {
+          include: {
+            barberProfile: {
+              select: {
+                user: { select: { fullName: true, profilePhoto: true } },
+              },
+            },
+          },
+        },
+      },
     }),
-    prisma.booking.count({ where }),
+    prisma.withdrawalRequest.count({ where }),
+    prisma.withdrawalRequest.count({
+      where: { status: { in: ["REQUESTED", "PROCESSING"] } },
+    }),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = Math.min(page * PAGE_SIZE, total);
 
-  const serialized = bookings.map((b) => ({
-    id: b.id,
-    date: dateFmt.format(b.date),
-    startTime: b.startTime,
-    status: b.status,
-    address: b.address,
-    totalInPence: b.totalInPence,
-    customerName: b.customer.fullName,
-    customerPhoto: b.customer.profilePhoto,
-    barberName: b.barber.user.fullName,
-    barberPhoto: b.barber.user.profilePhoto,
-    services: b.services.map((bs) => ({
-      name: bs.service.name,
-      priceInPence: bs.priceInPence,
-    })),
-    payment: b.payment
-      ? {
-          status: b.payment.status,
-          stripePaymentIntentId: b.payment.stripePaymentIntentId,
-          createdAt: b.payment.createdAt.toISOString(),
-          capturedAt: b.payment.capturedAt?.toISOString() ?? null,
-          heldUntil: b.payment.heldUntil?.toISOString() ?? null,
-          releasedAt: b.payment.releasedAt?.toISOString() ?? null,
-          refundedAt: b.payment.refundedAt?.toISOString() ?? null,
-          refundReason: b.payment.refundReason,
-        }
-      : null,
-    verificationCode: b.verificationCode
-      ? { code: b.verificationCode.code, isUsed: b.verificationCode.isUsed }
-      : null,
+  const rows = requests.map((r) => ({
+    id: r.id,
+    status: r.status,
+    amountInPence: r.amountInPence,
+    feeInPence: r.feeInPence,
+    netInPence: r.netInPence,
+    createdAt: dateFmt.format(r.createdAt),
+    processedAt: r.processedAt ? dateFmt.format(r.processedAt) : null,
+    bankAccountName: r.bankAccountName,
+    bankSortCode: r.bankSortCode,
+    bankAccountNumber: r.bankAccountNumber,
+    bankReference: r.bankReference,
+    adminNote: r.adminNote,
+    barberName: r.wallet.barberProfile.user.fullName,
+    barberPhoto: r.wallet.barberProfile.user.profilePhoto,
   }));
 
   return (
@@ -110,8 +88,8 @@ export default async function AdminBookingsPage({
                 key={value}
                 href={
                   value === "ALL"
-                    ? "/admin/bookings"
-                    : `/admin/bookings?status=${value}`
+                    ? "/admin/withdrawals"
+                    : `/admin/withdrawals?status=${value}`
                 }
                 className={`relative px-3 sm:px-6 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
                   active ? "text-[#D42B2B]" : "text-gray-500 hover:text-gray-700"
@@ -130,38 +108,40 @@ export default async function AdminBookingsPage({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <input
             type="search"
-            placeholder="Search bookings..."
+            placeholder="Search withdrawals..."
             className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-[#1A1A1A] placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#D42B2B]"
           />
         </div>
       </div>
+
+      {pendingCount > 0 && statusFilter === "ALL" && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+          <strong>{pendingCount}</strong> withdrawal{pendingCount === 1 ? "" : "s"} awaiting your action.
+        </div>
+      )}
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-180">
             <thead className="bg-white border-b border-gray-100">
               <tr className="text-left text-xs text-gray-500 uppercase tracking-wider">
-                <th className="px-6 py-3 font-medium">Booking ID</th>
-                <th className="px-6 py-3 font-medium">Customer</th>
+                <th className="px-6 py-3 font-medium">Requested</th>
                 <th className="px-6 py-3 font-medium">Barber</th>
-                <th className="px-6 py-3 font-medium">Date & Time</th>
-                <th className="px-6 py-3 font-medium">Service</th>
-                <th className="px-6 py-3 font-medium">Status</th>
+                <th className="px-6 py-3 font-medium">Bank details</th>
                 <th className="px-6 py-3 font-medium text-right">Amount</th>
-                <th className="px-4 py-3 w-8"></th>
+                <th className="px-6 py-3 font-medium">Status</th>
+                <th className="px-6 py-3 font-medium text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {serialized.length === 0 ? (
+              {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-16 text-center text-gray-400">
-                    No bookings found
+                  <td colSpan={6} className="px-6 py-16 text-center text-gray-400">
+                    No withdrawals found
                   </td>
                 </tr>
               ) : (
-                serialized.map((b) => (
-                  <BookingRow key={b.id} booking={b} />
-                ))
+                rows.map((r) => <WithdrawalRow key={r.id} data={r} />)
               )}
             </tbody>
           </table>
@@ -171,11 +151,7 @@ export default async function AdminBookingsPage({
           <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">
             Showing {from}-{to} of {total.toLocaleString()} entries
           </p>
-          <Pagination
-            statusFilter={statusFilter}
-            page={page}
-            totalPages={totalPages}
-          />
+          <Pagination statusFilter={statusFilter} page={page} totalPages={totalPages} />
         </div>
       </div>
     </div>
@@ -192,7 +168,7 @@ function Pagination({
   totalPages: number;
 }) {
   const baseQuery = statusFilter !== "ALL" ? `status=${statusFilter}&` : "";
-  const makeHref = (p: number) => `/admin/bookings?${baseQuery}page=${p}`;
+  const makeHref = (p: number) => `/admin/withdrawals?${baseQuery}page=${p}`;
 
   const pages: (number | "…")[] = [];
   if (totalPages <= 5) {

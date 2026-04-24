@@ -47,7 +47,15 @@ enum TransactionType {
   PAYOUT
   INSTANT_WITHDRAWAL
   WITHDRAWAL_FEE
+  WITHDRAWAL_REVERSAL
   REFUND_REVERSAL
+}
+
+enum WithdrawalStatus {
+  REQUESTED
+  PROCESSING
+  COMPLETED
+  FAILED
 }
 
 enum ReportCategory {
@@ -116,6 +124,11 @@ model BarberProfile {
   longitude Float?
   address   String?
   postcode  String?
+  // UK bank details for manual payouts. Stored plain for MVP — if
+  // compliance tightens later, migrate to application-level encryption.
+  bankAccountName   String?
+  bankSortCode      String?    // 6 digits, stored without dashes
+  bankAccountNumber String?    // 8 digits
   termsAcceptedAt DateTime?
   termsVersion    String?
   createdAt DateTime     @default(now())
@@ -269,7 +282,34 @@ model Wallet {
   pendingInPence    Int           @default(0)
   updatedAt         DateTime      @updatedAt
 
-  transactions WalletTransaction[]
+  transactions        WalletTransaction[]
+  withdrawalRequests  WithdrawalRequest[]
+}
+
+model WithdrawalRequest {
+  id            String           @id @default(uuid())
+  walletId      String
+  wallet        Wallet           @relation(fields: [walletId], references: [id])
+  amountInPence Int              // gross requested (= what leaves `available`)
+  feeInPence    Int              // platform withdrawal fee (0 at MVP)
+  netInPence    Int              // what actually lands in the bank
+  status        WithdrawalStatus @default(REQUESTED)
+  // Snapshot — frozen at request time so a barber changing their bank
+  // details later doesn't repoint in-flight money.
+  bankAccountName   String
+  bankSortCode      String
+  bankAccountNumber String
+  // Admin-side bookkeeping.
+  bankReference String?   // Bank transaction id / reference when marked paid.
+  adminNote     String?
+  processedById String?   // User.id of the admin who actioned it.
+  processedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([walletId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model WalletTransaction {

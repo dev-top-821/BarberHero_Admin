@@ -14,12 +14,30 @@ export async function GET(request: NextRequest) {
   if (isAuthError(auth)) return auth;
 
   try {
+    // Hide rooms whose booking has reached a terminal state (CANCELLED /
+    // COMPLETED) more than 7 days ago — keeps the inbox lean and avoids
+    // a forever-growing list of dead conversations. Anything still active
+    // OR recently terminal stays visible.
+    const archiveCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
     const rooms = await prisma.chatRoom.findMany({
       where: {
         booking: {
-          OR: [
-            { customerId: auth.id },
-            { barber: { userId: auth.id } },
+          AND: [
+            {
+              OR: [
+                { customerId: auth.id },
+                { barber: { userId: auth.id } },
+              ],
+            },
+            {
+              OR: [
+                // Active bookings — never archived.
+                { status: { notIn: ["CANCELLED", "COMPLETED"] } },
+                // Terminal but within the 7-day window.
+                { updatedAt: { gt: archiveCutoff } },
+              ],
+            },
           ],
         },
       },

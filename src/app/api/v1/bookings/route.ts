@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { stripe, PLATFORM_FEE_PENCE } from "@/lib/stripe";
 import { authenticateRequest, isAuthError, requireRole, jsonResponse, errorResponse } from "@/lib/api-utils";
 import { sendPushToUser } from "@/lib/push";
+import { redactPhonesByStatus } from "@/lib/booking-privacy";
 
 // GET /api/v1/bookings — List bookings for current user (customer or barber)
 export async function GET(request: NextRequest) {
@@ -24,9 +25,11 @@ export async function GET(request: NextRequest) {
         ...(status && { status: status as never }),
       },
       include: {
-        customer: { select: { fullName: true, profilePhoto: true } },
+        customer: { select: { fullName: true, profilePhoto: true, phone: true } },
         barber: {
-          include: { user: { select: { fullName: true, profilePhoto: true } } },
+          include: {
+            user: { select: { fullName: true, profilePhoto: true, phone: true } },
+          },
         },
         services: { include: { service: true } },
         verificationCode: auth.role === "CUSTOMER" ? { select: { code: true, isUsed: true } } : false,
@@ -34,7 +37,12 @@ export async function GET(request: NextRequest) {
       orderBy: { date: "desc" },
     });
 
-    return jsonResponse({ bookings });
+    // Phone numbers are hidden from both parties until the barber marks
+    // himself on the way (client decision in Docs/M3 — masked calling
+    // deferred in favour of a simple visibility gate).
+    const redacted = bookings.map(redactPhonesByStatus);
+
+    return jsonResponse({ bookings: redacted });
   } catch {
     return errorResponse("SERVER_ERROR", "An unexpected error occurred", 500);
   }

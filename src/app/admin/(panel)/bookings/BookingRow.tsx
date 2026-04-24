@@ -27,7 +27,9 @@ type BookingData = {
   address: string;
   totalInPence: number;
   customerName: string;
+  customerPhoto: string | null;
   barberName: string;
+  barberPhoto: string | null;
   services: { name: string; priceInPence: number }[];
   payment: {
     status: string;
@@ -75,8 +77,12 @@ export default function BookingRow({ booking: b }: { booking: BookingData }) {
         <td className="px-6 py-4 font-mono text-xs text-[#D42B2B] font-semibold">
           #BH-{b.id.slice(0, 4).toUpperCase()}
         </td>
-        <td className="px-6 py-4 font-medium text-[#1A1A1A]">{b.customerName}</td>
-        <td className="px-6 py-4 text-gray-700">{b.barberName}</td>
+        <td className="px-6 py-4">
+          <NameAvatar name={b.customerName} url={b.customerPhoto} emphasis="strong" />
+        </td>
+        <td className="px-6 py-4">
+          <NameAvatar name={b.barberName} url={b.barberPhoto} emphasis="regular" />
+        </td>
         <td className="px-6 py-4 text-gray-600 whitespace-nowrap">
           {b.date} · {b.startTime}
         </td>
@@ -207,6 +213,50 @@ export default function BookingRow({ booking: b }: { booking: BookingData }) {
         </tr>
       )}
     </>
+  );
+}
+
+// Small name + avatar pill used in list rows. Renders a real photo when
+// present; otherwise a dark circle with initials.
+function NameAvatar({
+  name,
+  url,
+  emphasis,
+}: {
+  name: string;
+  url: string | null;
+  emphasis: "strong" | "regular";
+}) {
+  const initials = name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+  return (
+    <div className="flex items-center gap-2.5">
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url}
+          alt=""
+          className="w-7 h-7 rounded-full object-cover shrink-0"
+        />
+      ) : (
+        <div className="w-7 h-7 rounded-full bg-[#1A1A1A] text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+          {initials || "?"}
+        </div>
+      )}
+      <span
+        className={
+          emphasis === "strong"
+            ? "font-medium text-[#1A1A1A]"
+            : "text-gray-700"
+        }
+      >
+        {name}
+      </span>
+    </div>
   );
 }
 

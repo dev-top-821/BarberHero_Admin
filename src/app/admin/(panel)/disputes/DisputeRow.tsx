@@ -48,7 +48,9 @@ type DisputeData = {
   createdAt: string;
   resolvedAt: string | null;
   customerName: string;
+  customerPhoto: string | null;
   barberName: string;
+  barberPhoto: string | null;
   bookingId: string;
   bookingDate: string;
   bookingAddress: string;
@@ -57,6 +59,47 @@ type DisputeData = {
   images: { id: string; url: string }[];
   services: { name: string; priceInPence: number }[];
 };
+
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
+function NameAvatar({
+  name,
+  url,
+  emphasis,
+}: {
+  name: string;
+  url: string | null;
+  emphasis: "strong" | "regular";
+}) {
+  return (
+    <div className="flex items-center gap-2.5">
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+      ) : (
+        <div className="w-7 h-7 rounded-full bg-[#1A1A1A] text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+          {initials(name) || "?"}
+        </div>
+      )}
+      <span
+        className={
+          emphasis === "strong"
+            ? "font-medium text-[#1A1A1A]"
+            : "text-gray-700"
+        }
+      >
+        {name}
+      </span>
+    </div>
+  );
+}
 
 type ResolveAction = "UNDER_REVIEW" | "RESOLVE_REFUND" | "RESOLVE_NO_REFUND" | "REJECT" | null;
 
@@ -113,8 +156,12 @@ export default function DisputeRow({ dispute: d }: { dispute: DisputeData }) {
         className="hover:bg-gray-50 transition-colors cursor-pointer"
       >
         <td className="px-6 py-4 text-gray-600 whitespace-nowrap">{d.createdAt}</td>
-        <td className="px-6 py-4 font-medium text-[#1A1A1A]">{d.customerName}</td>
-        <td className="px-6 py-4 text-gray-700">{d.barberName}</td>
+        <td className="px-6 py-4">
+          <NameAvatar name={d.customerName} url={d.customerPhoto} emphasis="strong" />
+        </td>
+        <td className="px-6 py-4">
+          <NameAvatar name={d.barberName} url={d.barberPhoto} emphasis="regular" />
+        </td>
         <td className="px-6 py-4 font-mono text-xs text-[#D42B2B]">
           #BK-{d.bookingId.slice(0, 4).toUpperCase()}
         </td>

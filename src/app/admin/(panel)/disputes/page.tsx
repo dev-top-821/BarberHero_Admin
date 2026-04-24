@@ -38,8 +38,12 @@ export default async function AdminDisputesPage({
         images: true,
         booking: {
           include: {
-            customer: { select: { fullName: true } },
-            barber: { include: { user: { select: { fullName: true } } } },
+            customer: { select: { fullName: true, profilePhoto: true } },
+            barber: {
+              include: {
+                user: { select: { fullName: true, profilePhoto: true } },
+              },
+            },
             services: { include: { service: { select: { name: true } } } },
             payment: { select: { status: true } },
           },
@@ -66,7 +70,9 @@ export default async function AdminDisputesPage({
     createdAt: dateFmt.format(r.createdAt),
     resolvedAt: r.resolvedAt ? dateFmt.format(r.resolvedAt) : null,
     customerName: r.booking.customer.fullName,
+    customerPhoto: r.booking.customer.profilePhoto,
     barberName: r.booking.barber.user.fullName,
+    barberPhoto: r.booking.barber.user.profilePhoto,
     bookingId: r.bookingId,
     bookingDate: dateFmt.format(r.booking.date),
     bookingAddress: r.booking.address,
