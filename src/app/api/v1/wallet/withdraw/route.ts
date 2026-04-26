@@ -8,14 +8,15 @@ import {
   errorResponse,
 } from "@/lib/api-utils";
 
-const MIN_WITHDRAWAL_PENCE = 1000; // £10
-const WITHDRAWAL_FEE_PENCE = 0;    // Free at MVP — platform absorbs bank cost.
+import { MIN_WITHDRAWAL_PENCE, WITHDRAWAL_FEE_PENCE } from "@/lib/wallet";
 
 // POST /api/v1/wallet/withdraw
 //
-// Tier-B manual-payout flow. Creates a WithdrawalRequest row and debits
-// the wallet's `available` bucket. Admin later marks it paid (or failed)
-// from the disputes panel.
+// "Instant" (relative to the free weekly auto-payout) manual-payout flow.
+// Creates a WithdrawalRequest row, debits the wallet's `available` bucket,
+// and applies a flat fee. Admin later marks it paid (or failed) from the
+// withdrawals queue. The free weekly auto-payout cron uses the same row
+// type but with feeInPence = 0.
 export async function POST(request: NextRequest) {
   const auth = await authenticateRequest(request);
   if (isAuthError(auth)) return auth;

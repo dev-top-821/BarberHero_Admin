@@ -25,11 +25,20 @@ export async function PATCH(
     const { id } = await params;
     const { status } = await request.json();
 
+    // Status PATCH only handles transitions the barber drives manually from
+    // the dashboard. Two transitions are deliberately omitted:
+    //
+    //   ON_THE_WAY → STARTED   driven by /bookings/:id/verify (code entry).
+    //                          Letting it happen here would skip the Stripe
+    //                          capture + wallet pending-credit, leaving the
+    //                          payment HELD forever.
+    //   STARTED    → COMPLETED driven by /cron/release-held-payments after
+    //                          the 24h hold elapses. Closing it earlier
+    //                          would also skip the EARNING + PLATFORM_FEE
+    //                          ledger writes.
     const validTransitions: Record<string, string[]> = {
       PENDING: ["CONFIRMED", "CANCELLED"],
       CONFIRMED: ["ON_THE_WAY", "CANCELLED"],
-      ON_THE_WAY: ["STARTED"],
-      STARTED: ["COMPLETED"],
     };
 
     const booking = await prisma.booking.findUnique({

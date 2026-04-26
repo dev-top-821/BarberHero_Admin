@@ -127,11 +127,16 @@ async function issueRefundForReport(
 
   if (payment.status === "HELD") {
     // Pre-capture — free release of the hold.
-    await stripe.paymentIntents.cancel(payment.stripePaymentIntentId);
+    await stripe.paymentIntents.cancel(
+      payment.stripePaymentIntentId,
+      undefined,
+      { idempotencyKey: `pi-cancel-${payment.id}` }
+    );
   } else if (payment.status === "PENDING_RELEASE") {
-    await stripe.refunds.create({
-      payment_intent: payment.stripePaymentIntentId,
-    });
+    await stripe.refunds.create(
+      { payment_intent: payment.stripePaymentIntentId },
+      { idempotencyKey: `pi-refund-${payment.id}` }
+    );
   } else {
     throw new Error(`Cannot refund a payment in status ${payment.status}`);
   }

@@ -1,6 +1,22 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest, isAuthError, requireRole, jsonResponse, errorResponse } from "@/lib/api-utils";
+import { MIN_WITHDRAWAL_PENCE, WITHDRAWAL_FEE_PENCE } from "@/lib/wallet";
+
+// Returns the next Monday at 09:00 UTC strictly after `now`. Matches the
+// schedule of /api/v1/cron/weekly-payouts so the wallet UI can show an
+// accurate "Next auto-payout" line.
+function nextWeeklyPayoutAt(now: Date): Date {
+  const d = new Date(now);
+  d.setUTCHours(9, 0, 0, 0);
+  const day = d.getUTCDay(); // 0 Sun … 1 Mon … 6 Sat
+  let daysUntilMonday = (1 - day + 7) % 7;
+  if (daysUntilMonday === 0 && now.getTime() >= d.getTime()) {
+    daysUntilMonday = 7;
+  }
+  d.setUTCDate(d.getUTCDate() + daysUntilMonday);
+  return d;
+}
 
 export async function GET(request: NextRequest) {
   const auth = await authenticateRequest(request);
@@ -39,7 +55,12 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return jsonResponse({ wallet });
+    return jsonResponse({
+      wallet,
+      nextAutoPayoutAt: nextWeeklyPayoutAt(new Date()).toISOString(),
+      withdrawalFeeInPence: WITHDRAWAL_FEE_PENCE,
+      minWithdrawalInPence: MIN_WITHDRAWAL_PENCE,
+    });
   } catch {
     return errorResponse("SERVER_ERROR", "An unexpected error occurred", 500);
   }

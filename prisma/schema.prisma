@@ -38,6 +38,7 @@ enum PaymentStatus {
   RELEASED
   REFUNDED
   FAILED
+  DISPUTED
 }
 
 enum TransactionType {
@@ -49,6 +50,7 @@ enum TransactionType {
   WITHDRAWAL_FEE
   WITHDRAWAL_REVERSAL
   REFUND_REVERSAL
+  DISPUTE_REVERSAL
 }
 
 enum WithdrawalStatus {

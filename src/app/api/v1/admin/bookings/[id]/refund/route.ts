@@ -54,16 +54,21 @@ export async function POST(
     if (payment.status === "HELD") {
       // Pre-capture — cancel the intent, which releases the authorisation.
       try {
-        await stripe.paymentIntents.cancel(payment.stripePaymentIntentId);
+        await stripe.paymentIntents.cancel(
+          payment.stripePaymentIntentId,
+          undefined,
+          { idempotencyKey: `pi-cancel-${payment.id}` }
+        );
       } catch {
         return errorResponse("STRIPE_ERROR", "Could not release payment", 502);
       }
     } else if (payment.status === "PENDING_RELEASE") {
       // Post-capture, within 24h hold — full refund from platform balance.
       try {
-        await stripe.refunds.create({
-          payment_intent: payment.stripePaymentIntentId,
-        });
+        await stripe.refunds.create(
+          { payment_intent: payment.stripePaymentIntentId },
+          { idempotencyKey: `pi-refund-${payment.id}` }
+        );
       } catch {
         return errorResponse("STRIPE_ERROR", "Could not refund payment", 502);
       }

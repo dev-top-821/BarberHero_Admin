@@ -101,12 +101,17 @@ export async function POST(request: NextRequest) {
     // card but not captured until the barber marks the booking complete.
     let paymentIntent;
     try {
-      paymentIntent = await stripe.paymentIntents.create({
-        amount: chargeInPence,
-        currency: "gbp",
-        capture_method: "manual",
-        metadata: { bookingId: booking.id, customerId: auth.id },
-      });
+      paymentIntent = await stripe.paymentIntents.create(
+        {
+          amount: chargeInPence,
+          currency: "gbp",
+          capture_method: "manual",
+          metadata: { bookingId: booking.id, customerId: auth.id },
+        },
+        // Booking id is unique per call — protects against double-charging if
+        // the client retries POST /bookings on a flaky network.
+        { idempotencyKey: `booking-create-${booking.id}` }
+      );
     } catch {
       // Roll back the booking if Stripe rejects — otherwise we'd have a
       // PENDING booking with no payment intent.

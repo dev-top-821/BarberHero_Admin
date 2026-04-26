@@ -58,9 +58,10 @@ export async function PATCH(
       return errorResponse("INVALID_STATE", "Payment already refunded", 409);
     }
     try {
-      await stripe.refunds.create({
-        payment_intent: payment.stripePaymentIntentId,
-      });
+      await stripe.refunds.create(
+        { payment_intent: payment.stripePaymentIntentId },
+        { idempotencyKey: `pi-refund-${payment.id}` }
+      );
     } catch {
       return errorResponse("STRIPE_ERROR", "Refund failed at Stripe", 502);
     }

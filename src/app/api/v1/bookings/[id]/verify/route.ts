@@ -66,7 +66,11 @@ export async function POST(
 
     // Capture first — if Stripe fails, we don't want to touch the DB.
     try {
-      await stripe.paymentIntents.capture(payment.stripePaymentIntentId);
+      await stripe.paymentIntents.capture(
+        payment.stripePaymentIntentId,
+        undefined,
+        { idempotencyKey: `pi-capture-${payment.id}` }
+      );
     } catch {
       return errorResponse("STRIPE_ERROR", "Could not capture payment", 502);
     }

@@ -78,7 +78,11 @@ export async function POST(
 
     // Cancel the PaymentIntent — pre-capture, so no money has moved.
     try {
-      await stripe.paymentIntents.cancel(payment.stripePaymentIntentId);
+      await stripe.paymentIntents.cancel(
+        payment.stripePaymentIntentId,
+        undefined,
+        { idempotencyKey: `pi-cancel-${payment.id}` }
+      );
     } catch {
       return errorResponse("STRIPE_ERROR", "Could not release payment", 502);
     }

@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { jsonResponse, errorResponse } from "@/lib/api-utils";
+import { sendPushToUser } from "@/lib/push";
 
 // POST /api/v1/payments/webhook — Stripe webhook handler.
 //
@@ -98,6 +99,25 @@ export async function POST(request: NextRequest) {
         break;
       }
 
+      case "charge.dispute.created": {
+        // Card issuer chargeback. Stripe debits the platform balance
+        // immediately and we have until the response_due_by date to submit
+        // evidence. We reverse any wallet credit, mark the payment DISPUTED,
+        // and open a refund-requested report so it lands in the admin
+        // disputes panel for follow-up.
+        await handleDisputeCreated(event.data.object as Stripe.Dispute);
+        break;
+      }
+
+      case "charge.dispute.closed": {
+        // Stripe has finished arbitration. If we won, funds come back; if
+        // we lost, they're gone. We auto-resolve the OPEN dispute report
+        // either way so the admin queue stays clean — admin can re-credit
+        // the barber manually if we won (rare; out of MVP scope).
+        await handleDisputeClosed(event.data.object as Stripe.Dispute);
+        break;
+      }
+
       default:
         break;
     }
@@ -108,4 +128,140 @@ export async function POST(request: NextRequest) {
     // next poll / user action will reconcile. We log via the thrown error.
     return jsonResponse({ received: true, warning: "handler_error" });
   }
+}
+
+async function handleDisputeCreated(dispute: Stripe.Dispute): Promise<void> {
+  const paymentIntentId =
+    typeof dispute.payment_intent === "string"
+      ? dispute.payment_intent
+      : dispute.payment_intent?.id;
+  if (!paymentIntentId) return;
+
+  const payment = await prisma.payment.findUnique({
+    where: { stripePaymentIntentId: paymentIntentId },
+    include: {
+      booking: { select: { id: true, barberId: true, customerId: true } },
+    },
+  });
+  if (!payment) return;
+  // Already handled — dispute webhooks can fire more than once during a
+  // case's lifecycle; the status flip is the idempotency guard.
+  if (payment.status === "DISPUTED") return;
+
+  const reason = `Stripe dispute: ${dispute.reason}`;
+  const wasCredited = payment.status === "PENDING_RELEASE" || payment.status === "RELEASED";
+  const wasReleased = payment.status === "RELEASED";
+
+  await prisma.$transaction(async (tx) => {
+    await tx.payment.update({
+      where: { id: payment.id },
+      data: { status: "DISPUTED", refundReason: reason },
+    });
+
+    // Cancel the booking if it isn't already in a terminal state — admin
+    // will reach out to the barber via the disputes panel.
+    await tx.booking.updateMany({
+      where: {
+        id: payment.booking.id,
+        status: { notIn: ["COMPLETED", "CANCELLED"] },
+      },
+      data: { status: "CANCELLED" },
+    });
+
+    // Reverse the wallet credit if we'd already given the barber the money.
+    // PENDING_RELEASE: only `pending` was credited.
+    // RELEASED:        the funds also moved to `available` (and may be
+    //                  partially withdrawn — that's accepted; the wallet
+    //                  can go negative under an external dispute and admin
+    //                  will reconcile).
+    if (wasCredited) {
+      const wallet = await tx.wallet.upsert({
+        where: { barberProfileId: payment.booking.barberId },
+        create: {
+          barberProfileId: payment.booking.barberId,
+          pendingInPence: 0,
+          availableInPence: 0,
+        },
+        update: wasReleased
+          ? { availableInPence: { decrement: payment.barberAmountInPence } }
+          : { pendingInPence: { decrement: payment.barberAmountInPence } },
+      });
+      await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          type: "DISPUTE_REVERSAL",
+          amountInPence: payment.barberAmountInPence,
+          bookingId: payment.booking.id,
+          description: reason,
+        },
+      });
+    }
+
+    // Open a refund-requested report so the dispute lands in the admin
+    // disputes panel without bespoke UI work.
+    await tx.report.create({
+      data: {
+        bookingId: payment.booking.id,
+        raisedById: payment.booking.customerId,
+        category: "PAYMENT",
+        description: `Card issuer dispute (${dispute.reason}). Stripe dispute id: ${dispute.id}.`,
+        requestRefund: true,
+        status: "OPEN",
+      },
+    });
+  });
+
+  void sendPushToUser(payment.booking.customerId, {
+    title: "Booking disputed",
+    body: "Your bank has opened a dispute on this booking. We'll be in touch.",
+    data: { type: "booking_status", bookingId: payment.booking.id, status: "CANCELLED" },
+  });
+
+  const barber = await prisma.barberProfile.findUnique({
+    where: { id: payment.booking.barberId },
+    select: { userId: true },
+  });
+  if (barber) {
+    void sendPushToUser(barber.userId, {
+      title: "Booking disputed",
+      body: "The customer's bank opened a dispute. The funds have been held back pending review.",
+      data: { type: "booking_status", bookingId: payment.booking.id, status: "CANCELLED" },
+    });
+  }
+}
+
+async function handleDisputeClosed(dispute: Stripe.Dispute): Promise<void> {
+  const paymentIntentId =
+    typeof dispute.payment_intent === "string"
+      ? dispute.payment_intent
+      : dispute.payment_intent?.id;
+  if (!paymentIntentId) return;
+
+  const payment = await prisma.payment.findUnique({
+    where: { stripePaymentIntentId: paymentIntentId },
+    select: { id: true, booking: { select: { id: true } } },
+  });
+  if (!payment) return;
+
+  // Auto-close the dispute report we opened on `created`. Status maps:
+  //   won           → admin won → resolve no-refund (wallet was already reversed
+  //                   on `created`; rare and admin can manually re-credit)
+  //   lost          → resolve refunded (already reflected in our DB state)
+  //   warning_*     → leave open; these are pre-dispute warnings only
+  const outcome = dispute.status;
+  if (outcome !== "won" && outcome !== "lost") return;
+
+  await prisma.report.updateMany({
+    where: {
+      bookingId: payment.booking.id,
+      requestRefund: true,
+      status: "OPEN",
+      description: { contains: dispute.id },
+    },
+    data: {
+      status: outcome === "won" ? "RESOLVED_NO_REFUND" : "RESOLVED_REFUNDED",
+      adminNote: `Stripe dispute closed: ${outcome}`,
+      resolvedAt: new Date(),
+    },
+  });
 }
