@@ -74,7 +74,8 @@ async function main() {
             },
             wallet: {
               create: {
-                balanceInPence: 0,
+                availableInPence: 0,
+                pendingInPence: 0,
               },
             },
             services: {
@@ -206,7 +207,7 @@ async function main() {
                 minBookingNoticeHours: 1,
               },
             },
-            wallet: { create: { balanceInPence: 0 } },
+            wallet: { create: { availableInPence: 0, pendingInPence: 0 } },
             services: {
               create: [
                 { name: "Textured Crop", durationMinutes: 35, priceInPence: 2800 },

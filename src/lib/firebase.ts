@@ -1,8 +1,12 @@
 import { cert, getApps, initializeApp, App } from "firebase-admin/app";
 import { getMessaging, Messaging } from "firebase-admin/messaging";
+import { getFirestore, Firestore } from "firebase-admin/firestore";
+import { getAuth, Auth } from "firebase-admin/auth";
 
 let cachedApp: App | null = null;
 let cachedMessaging: Messaging | null = null;
+let cachedFirestore: Firestore | null = null;
+let cachedAuth: Auth | null = null;
 
 function initAdminApp(): App | null {
   if (cachedApp) return cachedApp;
@@ -33,4 +37,20 @@ export function getAdminMessaging(): Messaging | null {
   if (!app) return null;
   cachedMessaging = getMessaging(app);
   return cachedMessaging;
+}
+
+export function getAdminFirestore(): Firestore | null {
+  if (cachedFirestore) return cachedFirestore;
+  const app = initAdminApp();
+  if (!app) return null;
+  cachedFirestore = getFirestore(app);
+  return cachedFirestore;
+}
+
+export function getAdminAuth(): Auth | null {
+  if (cachedAuth) return cachedAuth;
+  const app = initAdminApp();
+  if (!app) return null;
+  cachedAuth = getAuth(app);
+  return cachedAuth;
 }

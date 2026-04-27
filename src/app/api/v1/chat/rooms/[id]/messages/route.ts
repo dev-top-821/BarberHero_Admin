@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest, isAuthError, jsonResponse, errorResponse } from "@/lib/api-utils";
 import { sendPushToUser } from "@/lib/push";
+import { mirrorMessage } from "@/lib/chat-firestore";
 
 export async function GET(
   request: NextRequest,
@@ -89,6 +90,18 @@ export async function POST(
     if (room) {
       const { customerId, barber } = room.booking;
       const recipientId = auth.id === customerId ? barber.userId : customerId;
+      // Mirror to Firestore so the peer's snapshot listener receives the
+      // message instantly. Awaited (not voided) so a successful POST means
+      // both stores are in sync — but mirror failures are swallowed inside
+      // the helper, so Postgres truth alone is enough to succeed.
+      await mirrorMessage({
+        roomId: id,
+        messageId: message.id,
+        senderId: auth.id,
+        recipientId,
+        content,
+        createdAt: message.createdAt,
+      });
       void sendPushToUser(recipientId, {
         title: message.sender.fullName,
         body: content,

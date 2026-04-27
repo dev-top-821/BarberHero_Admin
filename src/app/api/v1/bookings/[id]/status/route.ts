@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest, isAuthError, requireRole, jsonResponse, errorResponse } from "@/lib/api-utils";
 import { sendPushToUser } from "@/lib/push";
+import { mirrorRoom } from "@/lib/chat-firestore";
 
 const STATUS_TITLES: Record<string, string> = {
   CONFIRMED: "Booking confirmed",
@@ -71,12 +72,29 @@ export async function PATCH(
       await prisma.verificationCode.create({
         data: { bookingId: id, code },
       });
-      await prisma.chatRoom
+      const room = await prisma.chatRoom
         .create({ data: { bookingId: id } })
         .catch(() => {
           // Room may already exist if an earlier call half-succeeded —
           // the unique constraint will catch it and we ignore.
+          return null;
         });
+      if (room) {
+        // Mirror room metadata to Firestore so the rooms list snapshot
+        // listener picks it up on both sides immediately.
+        const full = await prisma.booking.findUnique({
+          where: { id },
+          select: { customerId: true, barber: { select: { userId: true } } },
+        });
+        if (full) {
+          await mirrorRoom({
+            roomId: room.id,
+            customerId: full.customerId,
+            barberId: full.barber.userId,
+            createdAt: room.createdAt,
+          });
+        }
+      }
     }
 
     const title = STATUS_TITLES[status];

@@ -6,6 +6,7 @@ import {
   jsonResponse,
   errorResponse,
 } from "@/lib/api-utils";
+import { mirrorRead } from "@/lib/chat-firestore";
 
 // POST /api/v1/chat/rooms/:id/read
 // Stamps the current user's lastRead time to now — caller must be a
@@ -43,6 +44,10 @@ export async function POST(
         ? { customerLastReadAt: now }
         : { barberLastReadAt: now },
     });
+
+    // Mirror to Firestore so the peer's "Seen" marker + the user's own
+    // unread badge update live across both clients.
+    await mirrorRead(id, auth.id, isCustomer, now);
 
     return jsonResponse({ lastReadAt: now.toISOString() });
   } catch {
