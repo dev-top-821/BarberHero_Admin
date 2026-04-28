@@ -1,5 +1,5 @@
-import { mkdir, writeFile, unlink, stat } from "fs/promises";
-import { createReadStream, existsSync } from "fs";
+import { mkdir, writeFile, unlink, stat, readFile } from "fs/promises";
+import { existsSync } from "fs";
 import { join, resolve, sep, extname } from "path";
 import { randomUUID } from "crypto";
 
@@ -110,12 +110,17 @@ export async function deleteFromDisk(storagePath: string): Promise<void> {
 }
 
 /**
- * Stream a file back. Used by GET /api/v1/photos/[...path].
+ * Read a file back. Used by GET /api/v1/photos/[...path].
  * Returns null if the path escapes PHOTOS_DIR or the file is missing.
+ *
+ * Reads as a Buffer rather than streaming because Next.js's webpack
+ * mangles `createReadStream(...).toWeb()` — the bundled return type loses
+ * its prototype methods. Photos are capped at MAX_UPLOAD_BYTES (5 MB) so
+ * fully-buffered reads are fine memory-wise.
  */
 export async function openForRead(
   storagePath: string
-): Promise<{ stream: ReadableStream<Uint8Array>; size: number; contentType: string } | null> {
+): Promise<{ bytes: Uint8Array; size: number; contentType: string } | null> {
   const abs = resolveSafe(storagePath);
   if (!abs) return null;
   if (!existsSync(abs)) return null;
@@ -123,12 +128,9 @@ export async function openForRead(
   const st = await stat(abs);
   if (!st.isFile()) return null;
 
-  const nodeStream = createReadStream(abs);
-  // Adapt Node readable stream → web ReadableStream.
-  // @ts-expect-error — Node's Readable has toWeb() in recent runtimes.
-  const stream: ReadableStream<Uint8Array> = nodeStream.toWeb();
+  const bytes = await readFile(abs);
   return {
-    stream,
+    bytes,
     size: st.size,
     contentType: contentTypeFor(abs),
   };

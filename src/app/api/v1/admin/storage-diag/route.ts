@@ -24,7 +24,11 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const probe = searchParams.get("path");
+    // Trim any whitespace/newlines from the pasted path. Scalar (and a lot
+    // of clipboard sources) can drag a trailing \n into the query value,
+    // which would make existsSync hunt for a literal "...jpg\n" file and
+    // wrongly report exists:false.
+    const probe = searchParams.get("path")?.trim() || null;
 
     const envValue = process.env.PHOTOS_DIR ?? null;
     const cwd = process.cwd();

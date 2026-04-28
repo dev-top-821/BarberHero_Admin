@@ -33,15 +33,24 @@ export async function GET(
 
     const opened = await openForRead(storagePath);
     if (!opened) {
-      // Log so we can see in Render logs why a request 404'd. Compare
-      // against /api/v1/admin/storage-diag — if diag says exists:true and
-      // this logs exists:false for the same path, something is racing or
-      // the routes are seeing different filesystems.
-      console.warn("[photos] 404", {
+      // Use console.error so Render shows it at high visibility — a
+      // console.warn was being filtered out of the default Logs view.
+      // Also include filesystem listing for the user dir so we can spot
+      // case-sensitivity / encoding issues (e.g. NFD vs NFC unicode).
+      let parentDirListing: string[] = [];
+      try {
+        const { readdirSync } = await import("fs");
+        const { dirname } = await import("path");
+        parentDirListing = readdirSync(dirname(absForLog!));
+      } catch {
+        // Parent dir might not exist — that itself is data.
+      }
+      console.error("[photos] 404", {
         storagePath,
         abs: absForLog,
-        existsSync: existsSync(absForLog),
+        existsSync: existsSync(absForLog!),
         photosDir: PHOTOS_DIR,
+        parentDirListing,
       });
       return new Response("Not found", {
         status: 404,
@@ -49,7 +58,7 @@ export async function GET(
       });
     }
 
-    return new Response(opened.stream, {
+    return new Response(opened.bytes, {
       status: 200,
       headers: {
         "Content-Type": opened.contentType,

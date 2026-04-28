@@ -595,6 +595,35 @@ const routes: RouteSpec[] = [
     },
   },
   {
+    method: "post",
+    path: "/api/v1/bookings/{id}/complete",
+    summary: "Confirm completion (customer)",
+    description:
+      "Customer-driven early completion of a STARTED booking. Releases the " +
+      "barber's pending funds to `available` immediately, flips the booking " +
+      "to COMPLETED, and skips the 24h dispute window. After this the " +
+      "customer cannot request a refund without admin support.",
+    tags: ["Bookings"],
+    auth: true,
+    pathParams: ["id"],
+    responses: {
+      "200": {
+        description: "Released",
+        schema: z.object({
+          success: z.boolean(),
+          status: z.literal("COMPLETED"),
+        }),
+      },
+      "401": unauthorized,
+      "403": forbidden,
+      "404": notFound,
+      "409": {
+        description: "Booking not in STARTED state OR payment not in PENDING_RELEASE",
+        schema: ErrorResponse,
+      },
+    },
+  },
+  {
     method: "patch",
     path: "/api/v1/bookings/{id}/status",
     summary: "Update booking status (barber)",
