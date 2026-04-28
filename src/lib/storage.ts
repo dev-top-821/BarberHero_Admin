@@ -117,10 +117,18 @@ export async function deleteFromDisk(storagePath: string): Promise<void> {
  * mangles `createReadStream(...).toWeb()` — the bundled return type loses
  * its prototype methods. Photos are capped at MAX_UPLOAD_BYTES (5 MB) so
  * fully-buffered reads are fine memory-wise.
+ *
+ * Note the explicit `Uint8Array<ArrayBuffer>` return type. TypeScript 5.7
+ * tightened BodyInit / BlobPart to require `<ArrayBuffer>` (excluding
+ * SharedArrayBuffer-backed views), and a bare `Uint8Array` defaults to
+ * `Uint8Array<ArrayBufferLike>`. Without the generic param, callers can't
+ * pass the returned bytes to `new Response(...)`.
  */
 export async function openForRead(
   storagePath: string
-): Promise<{ bytes: Uint8Array; size: number; contentType: string } | null> {
+): Promise<
+  { bytes: Uint8Array<ArrayBuffer>; size: number; contentType: string } | null
+> {
   const abs = resolveSafe(storagePath);
   if (!abs) return null;
   if (!existsSync(abs)) return null;
@@ -128,14 +136,13 @@ export async function openForRead(
   const st = await stat(abs);
   if (!st.isFile()) return null;
 
-  // readFile returns Node's Buffer (= Uint8Array<ArrayBufferLike>). TypeScript
-  // 5.7 tightened BodyInit / BlobPart to require Uint8Array<ArrayBuffer> —
-  // SharedArrayBuffer-backed views are no longer accepted. Copy into a fresh
-  // ArrayBuffer-backed Uint8Array so the route can pass it to Response()
-  // without unsafe casts. The constructor overload `new Uint8Array(arrayLike)`
-  // returns Uint8Array<ArrayBuffer> with a brand-new backing buffer.
+  // Allocate by length first → TypeScript picks the
+  // `new(length: number): Uint8Array<ArrayBuffer>` overload, then `.set()`
+  // copies the bytes from Node's Buffer (Uint8Array<ArrayBufferLike>) into
+  // the fresh ArrayBuffer-backed view.
   const fileBuffer = await readFile(abs);
-  const bytes = new Uint8Array(fileBuffer);
+  const bytes = new Uint8Array(fileBuffer.byteLength);
+  bytes.set(fileBuffer);
   return {
     bytes,
     size: st.size,
