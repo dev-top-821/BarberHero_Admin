@@ -1002,6 +1002,57 @@ const routes: RouteSpec[] = [
       "502": { description: "Stripe refund failed", schema: ErrorResponse },
     },
   },
+  {
+    method: "get",
+    path: "/api/v1/admin/storage-diag",
+    summary: "Photos disk diagnostic",
+    description:
+      "Reports the runtime PHOTOS_DIR value, whether the directory exists, " +
+      "what files are in it, and (optionally) probes a specific storage path. " +
+      "Use to debug 'uploads succeed but reads return 404' (mismatched env vars, " +
+      "persistent disk not mounted, etc).",
+    tags: ["Admin"],
+    auth: true,
+    query: {
+      path: {
+        schema: z.string().optional(),
+        description:
+          "Optional disk-relative path to probe (e.g. `barber-photos/{userId}/profile-{uuid}.jpg`). " +
+          "Returns whether that specific file exists.",
+      },
+    },
+    responses: {
+      "200": {
+        description: "Diagnostic report",
+        schema: z.object({
+          env: z.object({ PHOTOS_DIR: z.string().nullable() }),
+          cwd: z.string(),
+          resolved: z.object({
+            path: z.string(),
+            exists: z.boolean(),
+            isDirectory: z.boolean(),
+          }),
+          contents: z.object({
+            topLevelEntries: z.array(z.string()),
+            barberPhotosFileCount: z.number(),
+            firstFiveFiles: z.array(z.string()),
+          }),
+          probe: z
+            .object({
+              requested: z.string(),
+              absolutePath: z.string(),
+              insidePhotosDir: z.boolean(),
+              exists: z.boolean(),
+            })
+            .nullable(),
+          nodeVersion: z.string(),
+        }),
+      },
+      "401": unauthorized,
+      "403": forbidden,
+      "500": { description: "Diag failed", schema: ErrorResponse },
+    },
+  },
 ];
 
 // ─── Document ────────────────────────────────────────────────
