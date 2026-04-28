@@ -23,9 +23,15 @@ export interface AuthenticatedUser {
 export async function authenticateRequest(
   request: NextRequest
 ): Promise<AuthenticatedUser | Response> {
-  const token = extractBearerToken(
-    request.headers.get("authorization")
-  );
+  // Mobile apps + external API callers send a Bearer token. The admin
+  // panel (and the Scalar API docs hosted alongside it) instead authenticates
+  // via the HttpOnly `admin_session` cookie set by POST /api/admin/login.
+  // Accept either — both carry the same JWT shape, so verifyAccessToken
+  // handles them identically.
+  const token =
+    extractBearerToken(request.headers.get("authorization")) ??
+    request.cookies.get("admin_session")?.value ??
+    null;
 
   if (!token) {
     return errorResponse("UNAUTHORIZED", "Missing authentication token", 401);

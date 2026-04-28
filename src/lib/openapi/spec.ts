@@ -1070,7 +1070,7 @@ Welcome to the **BarberHero** API reference. This document covers both the admin
 
 There are two groups of endpoints, shown separately in the sidebar:
 
-- **Admin Panel** — used by the web admin at \`/admin\`. Authentication is cookie-based (\`admin_session\`, HttpOnly, set by \`POST /api/admin/login\`). You don't paste a token; the browser sends the cookie automatically.
+- **Admin Panel** — used by the web admin at \`/admin\`. Authentication is cookie-based (\`admin_session\`, HttpOnly, set by \`POST /api/admin/login\`). You don't paste a token; the browser sends the cookie automatically. Admin-tagged \`/api/v1/admin/*\` endpoints accept either this cookie or a Bearer JWT.
 - **Mobile App** — used by the iOS / Android app. Authentication is a bearer JWT obtained from \`POST /api/v1/auth/login\`. Include it as \`Authorization: Bearer <accessToken>\` on every request.
 
 ## Trying endpoints from this page
