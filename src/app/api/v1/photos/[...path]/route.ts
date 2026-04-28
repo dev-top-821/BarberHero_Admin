@@ -15,20 +15,27 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
-  const { path } = await params;
-  const storagePath = path.join("/");
+  try {
+    const { path } = await params;
+    const storagePath = path.join("/");
 
-  const opened = await openForRead(storagePath);
-  if (!opened) {
+    const opened = await openForRead(storagePath);
+    if (!opened) {
+      return new Response("Not found", { status: 404 });
+    }
+
+    return new Response(opened.stream, {
+      status: 200,
+      headers: {
+        "Content-Type": opened.contentType,
+        "Content-Length": String(opened.size),
+        "Cache-Control": "public, max-age=31536000, immutable",
+      },
+    });
+  } catch {
+    // Read errors (missing disk mount, permissions, stream conversion)
+    // shouldn't crash the route — surface as 404 so the client renders a
+    // placeholder instead of a hard error.
     return new Response("Not found", { status: 404 });
   }
-
-  return new Response(opened.stream, {
-    status: 200,
-    headers: {
-      "Content-Type": opened.contentType,
-      "Content-Length": String(opened.size),
-      "Cache-Control": "public, max-age=31536000, immutable",
-    },
-  });
 }
