@@ -21,7 +21,13 @@ export async function GET(
 
     const opened = await openForRead(storagePath);
     if (!opened) {
-      return new Response("Not found", { status: 404 });
+      // Tell clients NOT to cache the 404. Otherwise an image that's
+      // missing now (e.g. file upload race, ephemeral-disk hangover)
+      // stays "broken" on the device even after the file lands on disk.
+      return new Response("Not found", {
+        status: 404,
+        headers: { "Cache-Control": "no-store" },
+      });
     }
 
     return new Response(opened.stream, {
@@ -35,7 +41,10 @@ export async function GET(
   } catch {
     // Read errors (missing disk mount, permissions, stream conversion)
     // shouldn't crash the route — surface as 404 so the client renders a
-    // placeholder instead of a hard error.
-    return new Response("Not found", { status: 404 });
+    // placeholder instead of a hard error. Same no-store rule as above.
+    return new Response("Not found", {
+      status: 404,
+      headers: { "Cache-Control": "no-store" },
+    });
   }
 }
