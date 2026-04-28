@@ -99,6 +99,16 @@ export async function POST(request: NextRequest) {
 
     // Create PaymentIntent with manual capture — funds are authorized on the
     // card but not captured until the barber marks the booking complete.
+    //
+    // payment_method_types: ["card"] is intentional. With manual capture +
+    // no explicit types, Stripe auto-includes whatever's enabled in the
+    // dashboard (Amazon Pay, Revolut Pay, etc.) and then filters out the
+    // ones that don't support manual capture *at PaymentSheet load time*.
+    // That async filter caused the sheet to hang showing alternative-
+    // method icons while the card form never rendered. Forcing card-only
+    // makes the sheet open instantly with the card input, and matches the
+    // app's hold-funds business model (only cards reliably support manual
+    // capture for the 24h hold window).
     let paymentIntent;
     try {
       paymentIntent = await stripe.paymentIntents.create(
@@ -106,6 +116,7 @@ export async function POST(request: NextRequest) {
           amount: chargeInPence,
           currency: "gbp",
           capture_method: "manual",
+          payment_method_types: ["card"],
           metadata: { bookingId: booking.id, customerId: auth.id },
         },
         // Booking id is unique per call — protects against double-charging if
