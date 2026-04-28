@@ -58,11 +58,9 @@ export async function GET(
       });
     }
 
-    // Wrap the Buffer in a Blob — Response's BodyInit type rejects
-    // Node's `Uint8Array<ArrayBufferLike>` (TypeScript narrowed BodyInit to
-    // `Uint8Array<ArrayBuffer>` in 5.7), but Blob accepts BufferSource so
-    // the cast happens cleanly. Same bytes, no copy.
-    return new Response(new Blob([opened.bytes], { type: opened.contentType }), {
+    // openForRead returns a Uint8Array<ArrayBuffer>, which is a valid
+    // BodyInit — Response can take it directly with no Blob wrapper.
+    return new Response(opened.bytes, {
       status: 200,
       headers: {
         "Content-Type": opened.contentType,

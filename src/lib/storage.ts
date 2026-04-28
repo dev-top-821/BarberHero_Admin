@@ -128,7 +128,14 @@ export async function openForRead(
   const st = await stat(abs);
   if (!st.isFile()) return null;
 
-  const bytes = await readFile(abs);
+  // readFile returns Node's Buffer (= Uint8Array<ArrayBufferLike>). TypeScript
+  // 5.7 tightened BodyInit / BlobPart to require Uint8Array<ArrayBuffer> —
+  // SharedArrayBuffer-backed views are no longer accepted. Copy into a fresh
+  // ArrayBuffer-backed Uint8Array so the route can pass it to Response()
+  // without unsafe casts. The constructor overload `new Uint8Array(arrayLike)`
+  // returns Uint8Array<ArrayBuffer> with a brand-new backing buffer.
+  const fileBuffer = await readFile(abs);
+  const bytes = new Uint8Array(fileBuffer);
   return {
     bytes,
     size: st.size,
