@@ -7,7 +7,12 @@ import {
   jsonResponse,
   errorResponse,
 } from "@/lib/api-utils";
-import { saveToDisk, isAllowedImageType, MAX_UPLOAD_BYTES } from "@/lib/storage";
+import {
+  saveToDisk,
+  isAllowedImageType,
+  MAX_UPLOAD_BYTES,
+  getPublicOrigin,
+} from "@/lib/storage";
 
 // POST /api/v1/barber/profile/photo
 // Multipart upload of the barber's face photo. Writes to the photos disk
@@ -36,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
 
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const origin = new URL(request.url).origin;
+    const origin = getPublicOrigin(request);
     const { url } = await saveToDisk({
       bytes,
       userId: auth.id,

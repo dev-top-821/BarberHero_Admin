@@ -44,6 +44,28 @@ const KIND_FOLDER: Record<
 };
 
 /**
+ * Public-facing origin for photo URLs. Behind a reverse proxy (Render,
+ * Vercel, Cloudflare) the Node.js process's view of `request.url` is the
+ * internal address (e.g. `https://localhost:10000`), not the URL devices
+ * use. Resolution order:
+ *   1. `PUBLIC_BASE_URL` env var (set this on Render to the public URL)
+ *   2. `X-Forwarded-Proto` + `X-Forwarded-Host` headers
+ *   3. Fallback: `request.url` origin (correct for local dev)
+ */
+export function getPublicOrigin(request: Request): string {
+  const fromEnv = process.env.PUBLIC_BASE_URL;
+  if (fromEnv) return stripTrailingSlash(fromEnv);
+
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  if (forwardedHost) {
+    const proto = request.headers.get("x-forwarded-proto") ?? "https";
+    return `${proto}://${forwardedHost}`;
+  }
+
+  return new URL(request.url).origin;
+}
+
+/**
  * Persist an uploaded file to the photos disk. Returns a disk-relative
  * path like `barber-photos/{userId}/profile-{uuid}.jpg` and the public URL
  * that the app can render directly (served by GET /api/v1/photos/[...path]).
