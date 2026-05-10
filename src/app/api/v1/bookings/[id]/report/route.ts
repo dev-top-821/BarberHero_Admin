@@ -102,6 +102,15 @@ export async function POST(
       images: parsed.data.imageUrls
         ? { create: parsed.data.imageUrls.map((url) => ({ url })) }
         : undefined,
+      events: {
+        create: {
+          toStatus: "OPEN",
+          description: parsed.data.requestRefund
+            ? "Dispute filed with refund request"
+            : "Dispute filed",
+          actorId: auth.id,
+        },
+      },
     },
     include: { images: true },
   });

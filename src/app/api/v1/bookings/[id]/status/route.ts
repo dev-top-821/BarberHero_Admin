@@ -44,7 +44,12 @@ export async function PATCH(
 
     const booking = await prisma.booking.findUnique({
       where: { id },
-      select: { status: true, customerId: true },
+      select: {
+        status: true,
+        customerId: true,
+        date: true,
+        startTime: true,
+      },
     });
 
     if (!booking) {
@@ -57,6 +62,25 @@ export async function PATCH(
         "INVALID_TRANSITION",
         `Cannot transition from ${booking.status} to ${status}`
       );
+    }
+
+    // ON_THE_WAY unlocks phone visibility (see booking-privacy.ts) and
+    // is otherwise a free toggle, so a barber could spam-flip to read
+    // the customer's number 6 hours before the booking. Refuse if more
+    // than 60 minutes before the scheduled start.
+    if (status === "ON_THE_WAY") {
+      const [hh, mm] = booking.startTime.split(":").map((s) => Number.parseInt(s, 10));
+      const scheduledStart = new Date(booking.date);
+      scheduledStart.setUTCHours(hh, mm, 0, 0);
+      const minutesUntilStart =
+        (scheduledStart.getTime() - Date.now()) / (60 * 1000);
+      if (minutesUntilStart > 60) {
+        return errorResponse(
+          "TOO_EARLY",
+          "You can only go on the way within an hour of the booking start time.",
+          409,
+        );
+      }
     }
 
     const updated = await prisma.booking.update({
@@ -103,7 +127,7 @@ export async function PATCH(
         title,
         body:
           status === "CONFIRMED"
-            ? "Your booking has been accepted by the barber."
+            ? "Your booking has been accepted. Don't share your verification code until the barber arrives at your address."
             : status === "CANCELLED"
             ? "The barber cancelled this booking."
             : "Tap to view your booking.",

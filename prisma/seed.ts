@@ -159,6 +159,13 @@ async function main() {
         (sum, s) => sum + s.priceInPence,
         0
       );
+      const totalDuration = barberProfile.services.reduce(
+        (sum, s) => sum + s.durationMinutes,
+        0
+      );
+      const startMin = 10 * 60;
+      const endMin = startMin + totalDuration;
+      const endTime = `${Math.floor(endMin / 60).toString().padStart(2, "0")}:${(endMin % 60).toString().padStart(2, "0")}`;
 
       const booking = await prisma.booking.create({
         data: {
@@ -166,6 +173,7 @@ async function main() {
           barberId: barberProfile.id,
           date: new Date(),
           startTime: "10:00",
+          endTime,
           status: "CONFIRMED",
           address: "42 Baker Street, London, W1U 3BU",
           latitude: 51.5237,

@@ -22,16 +22,32 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
 export default async function AdminDisputesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; page?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; q?: string }>;
 }) {
   const params = await searchParams;
   const statusFilter = params.status ?? "ALL";
+  const query = (params.q ?? "").trim();
   const page = Math.max(1, parseInt(params.page ?? "1") || 1);
 
-  const where =
-    statusFilter !== "ALL" ? { status: statusFilter as never } : {};
+  // Free-text search hits customer / barber names + booking id prefix.
+  // Lower-cased contains is good enough for MVP-scale data; swap for
+  // tsvector once we cross ~10k rows.
+  const searchClause = query
+    ? {
+        OR: [
+          { booking: { customer: { fullName: { contains: query, mode: "insensitive" as const } } } },
+          { booking: { barber: { user: { fullName: { contains: query, mode: "insensitive" as const } } } } },
+          { booking: { id: { startsWith: query.toLowerCase() } } },
+          { id: { startsWith: query.toLowerCase() } },
+        ],
+      }
+    : {};
 
-  const [reports, total] = await Promise.all([
+  const statusClause =
+    statusFilter !== "ALL" ? { status: statusFilter as never } : {};
+  const where = { ...statusClause, ...searchClause };
+
+  const [reports, total, openCount] = await Promise.all([
     prisma.report.findMany({
       where,
       include: {
@@ -54,6 +70,9 @@ export default async function AdminDisputesPage({
       take: PAGE_SIZE,
     }),
     prisma.report.count({ where }),
+    prisma.report.count({
+      where: { status: { in: ["OPEN", "UNDER_REVIEW"] } },
+    }),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -112,15 +131,30 @@ export default async function AdminDisputesPage({
           })}
         </div>
 
-        <div className="relative sm:ml-auto w-full sm:w-64">
+        <form
+          method="GET"
+          action="/admin/disputes"
+          className="relative sm:ml-auto w-full sm:w-64"
+        >
+          {statusFilter !== "ALL" && (
+            <input type="hidden" name="status" value={statusFilter} />
+          )}
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <input
             type="search"
+            name="q"
+            defaultValue={query}
             placeholder="Search disputes..."
             className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-[#1A1A1A] placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#D42B2B]"
           />
-        </div>
+        </form>
       </div>
+
+      {openCount > 0 && statusFilter === "ALL" && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+          <strong>{openCount}</strong> dispute{openCount === 1 ? "" : "s"} awaiting your action — click any row to review and resolve.
+        </div>
+      )}
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
@@ -133,7 +167,7 @@ export default async function AdminDisputesPage({
                 <th className="px-6 py-3 font-medium">Booking</th>
                 <th className="px-6 py-3 font-medium">Category</th>
                 <th className="px-6 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 w-8"></th>
+                <th className="px-6 py-3 font-medium text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -158,6 +192,7 @@ export default async function AdminDisputesPage({
           </p>
           <Pagination
             statusFilter={statusFilter}
+            query={query}
             page={page}
             totalPages={totalPages}
           />
@@ -169,14 +204,19 @@ export default async function AdminDisputesPage({
 
 function Pagination({
   statusFilter,
+  query,
   page,
   totalPages,
 }: {
   statusFilter: string;
+  query: string;
   page: number;
   totalPages: number;
 }) {
-  const baseQuery = statusFilter !== "ALL" ? `status=${statusFilter}&` : "";
+  const parts: string[] = [];
+  if (statusFilter !== "ALL") parts.push(`status=${encodeURIComponent(statusFilter)}`);
+  if (query) parts.push(`q=${encodeURIComponent(query)}`);
+  const baseQuery = parts.length ? `${parts.join("&")}&` : "";
   const makeHref = (p: number) => `/admin/disputes?${baseQuery}page=${p}`;
 
   const pages: (number | "…")[] = [];

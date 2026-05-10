@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import {
   ChevronDown,
@@ -10,6 +11,7 @@ import {
   Clock,
   XCircle,
   FileText,
+  ExternalLink,
 } from "lucide-react";
 import { resolveDispute } from "../actions";
 import ConfirmModal from "../ConfirmModal";
@@ -188,8 +190,29 @@ export default function DisputeRow({ dispute: d }: { dispute: DisputeData }) {
             {statusLabel[d.status] ?? d.status}
           </span>
         </td>
-        <td className="px-4 py-4 text-gray-400">
-          {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        <td className="px-4 py-4 text-right whitespace-nowrap">
+          <div className="flex items-center justify-end gap-1.5">
+            {canResolve && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setExpanded(true); }}
+                className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider rounded-md bg-[#D42B2B] text-white hover:bg-[#A81E1E] transition-colors"
+              >
+                Resolve
+              </button>
+            )}
+            <Link
+              href={`/admin/disputes/${d.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="p-1.5 rounded-md text-gray-400 hover:text-[#D42B2B] hover:bg-gray-100 transition-colors"
+              title="Open detail"
+            >
+              <ExternalLink className="w-4 h-4" />
+            </Link>
+            <span className="text-gray-400 px-1">
+              {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </span>
+          </div>
         </td>
       </tr>
 

@@ -23,14 +23,32 @@ const dateFmt = new Intl.DateTimeFormat("en-GB", {
 export default async function AdminWithdrawalsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; page?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; q?: string }>;
 }) {
   const params = await searchParams;
   const statusFilter = params.status ?? "ALL";
+  const query = (params.q ?? "").trim();
   const page = Math.max(1, parseInt(params.page ?? "1") || 1);
 
-  const where =
+  const searchClause = query
+    ? {
+        OR: [
+          {
+            wallet: {
+              barberProfile: {
+                user: { fullName: { contains: query, mode: "insensitive" as const } },
+              },
+            },
+          },
+          { bankReference: { contains: query, mode: "insensitive" as const } },
+          { bankAccountName: { contains: query, mode: "insensitive" as const } },
+        ],
+      }
+    : {};
+
+  const statusClause =
     statusFilter !== "ALL" ? { status: statusFilter as never } : {};
+  const where = { ...statusClause, ...searchClause };
 
   const [requests, total, pendingCount] = await Promise.all([
     prisma.withdrawalRequest.findMany({
@@ -104,14 +122,23 @@ export default async function AdminWithdrawalsPage({
           })}
         </div>
 
-        <div className="relative sm:ml-auto w-full sm:w-64">
+        <form
+          method="GET"
+          action="/admin/withdrawals"
+          className="relative sm:ml-auto w-full sm:w-64"
+        >
+          {statusFilter !== "ALL" && (
+            <input type="hidden" name="status" value={statusFilter} />
+          )}
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <input
             type="search"
+            name="q"
+            defaultValue={query}
             placeholder="Search withdrawals..."
             className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-[#1A1A1A] placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#D42B2B]"
           />
-        </div>
+        </form>
       </div>
 
       {pendingCount > 0 && statusFilter === "ALL" && (
@@ -151,7 +178,12 @@ export default async function AdminWithdrawalsPage({
           <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">
             Showing {from}-{to} of {total.toLocaleString()} entries
           </p>
-          <Pagination statusFilter={statusFilter} page={page} totalPages={totalPages} />
+          <Pagination
+            statusFilter={statusFilter}
+            query={query}
+            page={page}
+            totalPages={totalPages}
+          />
         </div>
       </div>
     </div>
@@ -160,14 +192,19 @@ export default async function AdminWithdrawalsPage({
 
 function Pagination({
   statusFilter,
+  query,
   page,
   totalPages,
 }: {
   statusFilter: string;
+  query: string;
   page: number;
   totalPages: number;
 }) {
-  const baseQuery = statusFilter !== "ALL" ? `status=${statusFilter}&` : "";
+  const parts: string[] = [];
+  if (statusFilter !== "ALL") parts.push(`status=${encodeURIComponent(statusFilter)}`);
+  if (query) parts.push(`q=${encodeURIComponent(query)}`);
+  const baseQuery = parts.length ? `${parts.join("&")}&` : "";
   const makeHref = (p: number) => `/admin/withdrawals?${baseQuery}page=${p}`;
 
   const pages: (number | "…")[] = [];

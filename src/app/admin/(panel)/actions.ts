@@ -70,15 +70,19 @@ export async function rejectBarber(barberId: string, reason: string) {
 export async function resolveDispute(
   reportId: string,
   action: "UNDER_REVIEW" | "RESOLVE_REFUND" | "RESOLVE_NO_REFUND" | "REJECT",
-  adminNote?: string
+  adminNote?: string,
+  // Optional partial refund — pence. Falls back to the full booking
+  // total when omitted. Ignored unless action === "RESOLVE_REFUND".
+  refundAmountInPence?: number,
 ) {
   const admin = await requireAdmin();
 
   // Refund path: issue Stripe refund / cancel, reverse the wallet pending
   // credit (if applicable), close the booking, push both parties.
   if (action === "RESOLVE_REFUND") {
-    await issueRefundForReport(reportId, admin.sub, adminNote);
+    await issueRefundForReport(reportId, admin.sub, adminNote, refundAmountInPence);
     revalidatePath("/admin/disputes");
+    revalidatePath(`/admin/disputes/${reportId}`);
     return;
   }
 
@@ -88,23 +92,77 @@ export async function resolveDispute(
     REJECT: "REJECTED",
   } as const;
 
-  await prisma.report.update({
-    where: { id: reportId },
-    data: {
-      status: statusMap[action],
-      adminNote: adminNote || undefined,
-      resolvedById: action === "UNDER_REVIEW" ? null : admin.sub,
-      resolvedAt: action === "UNDER_REVIEW" ? null : new Date(),
-    },
+  const newStatus = statusMap[action];
+
+  await prisma.$transaction(async (tx) => {
+    await tx.report.update({
+      where: { id: reportId },
+      data: {
+        status: newStatus,
+        adminNote: adminNote || undefined,
+        resolvedById: action === "UNDER_REVIEW" ? null : admin.sub,
+        resolvedAt: action === "UNDER_REVIEW" ? null : new Date(),
+      },
+    });
+    await tx.reportEvent.create({
+      data: {
+        reportId,
+        toStatus: newStatus,
+        description:
+          action === "UNDER_REVIEW"
+            ? "Marked under review"
+            : action === "RESOLVE_NO_REFUND"
+            ? "Resolved without refund"
+            : "Dispute rejected",
+        actorId: admin.sub,
+      },
+    });
   });
 
   revalidatePath("/admin/disputes");
+  revalidatePath(`/admin/disputes/${reportId}`);
+}
+
+// Block / unblock a barber straight from the dispute detail page so the
+// admin doesn't have to navigate away mid-investigation. Mirrors the
+// existing toggleBarberBlock contract but keyed by reportId so the page
+// doesn't have to know the barber's profile id.
+export async function blockBarberFromReport(reportId: string) {
+  const admin = await requireAdmin();
+  const report = await prisma.report.findUnique({
+    where: { id: reportId },
+    select: {
+      booking: {
+        select: { barber: { select: { id: true, status: true } } },
+      },
+    },
+  });
+  if (!report) throw new Error("Report not found");
+
+  const current = report.booking.barber.status;
+  const newStatus = current === "BLOCKED" ? "APPROVED" : "BLOCKED";
+  await prisma.barberProfile.update({
+    where: { id: report.booking.barber.id },
+    data: { status: newStatus },
+  });
+
+  await prisma.reportEvent.create({
+    data: {
+      reportId,
+      description: newStatus === "BLOCKED" ? "Barber blocked from dispute" : "Barber unblocked from dispute",
+      actorId: admin.sub,
+    },
+  });
+
+  revalidatePath("/admin/barbers");
+  revalidatePath(`/admin/disputes/${reportId}`);
 }
 
 async function issueRefundForReport(
   reportId: string,
   adminId: string,
-  adminNote: string | undefined
+  adminNote: string | undefined,
+  refundAmountInPence: number | undefined
 ) {
   const report = await prisma.report.findUnique({
     where: { id: reportId },
@@ -125,8 +183,33 @@ async function issueRefundForReport(
 
   const reason = adminNote?.trim() || "Refund issued by admin";
 
+  // Resolve the refund amount. Default = full booking total. Bound to
+  // [1p, payment.amountInPence]. Pre-capture (HELD) refunds are
+  // always full because Stripe cancel doesn't take a partial amount.
+  const requested = refundAmountInPence ?? payment.amountInPence;
+  if (!Number.isInteger(requested) || requested < 1) {
+    throw new Error("Refund amount must be a positive whole number of pence.");
+  }
+  if (requested > payment.amountInPence) {
+    throw new Error("Refund amount cannot exceed the booking total.");
+  }
+  const isPartial = requested < payment.amountInPence;
+  if (isPartial && payment.status === "HELD") {
+    throw new Error(
+      "Partial refunds aren't supported on uncaptured payments — capture first or refund in full."
+    );
+  }
+
+  // Per-pence share that came out of the barber's portion vs the
+  // platform fee. Proportional split keeps the wallet ledger honest on
+  // partial refunds: a £15 refund on a £30 booking returns £15 × (barber/total)
+  // from pending and £15 × (fee/total) from the fee bucket.
+  const barberShare = Math.round(
+    (requested * payment.barberAmountInPence) / payment.amountInPence
+  );
+
   if (payment.status === "HELD") {
-    // Pre-capture — free release of the hold.
+    // Pre-capture — free release of the hold (full refund only).
     await stripe.paymentIntents.cancel(
       payment.stripePaymentIntentId,
       undefined,
@@ -134,8 +217,15 @@ async function issueRefundForReport(
     );
   } else if (payment.status === "PENDING_RELEASE") {
     await stripe.refunds.create(
-      { payment_intent: payment.stripePaymentIntentId },
-      { idempotencyKey: `pi-refund-${payment.id}` }
+      {
+        payment_intent: payment.stripePaymentIntentId,
+        amount: isPartial ? requested : undefined,
+      },
+      {
+        idempotencyKey: isPartial
+          ? `pi-refund-${payment.id}-${requested}`
+          : `pi-refund-${payment.id}`,
+      }
     );
   } else {
     throw new Error(`Cannot refund a payment in status ${payment.status}`);
@@ -143,19 +233,25 @@ async function issueRefundForReport(
 
   const now = new Date();
   await prisma.$transaction(async (tx) => {
+    // On partial refund the booking stays open — only mark CANCELLED on
+    // a full refund.
     await tx.payment.update({
       where: { id: payment.id },
-      data: { status: "REFUNDED", refundedAt: now, refundReason: reason },
+      data: isPartial
+        ? { refundReason: reason }
+        : { status: "REFUNDED", refundedAt: now, refundReason: reason },
     });
 
-    await tx.booking.update({
-      where: { id: booking.id },
-      data: { status: "CANCELLED" },
-    });
+    if (!isPartial) {
+      await tx.booking.update({
+        where: { id: booking.id },
+        data: { status: "CANCELLED" },
+      });
+    }
 
     // Only reverse wallet if we'd actually credited pending — HELD payments
     // never touched the wallet.
-    if (payment.status === "PENDING_RELEASE") {
+    if (payment.status === "PENDING_RELEASE" && barberShare > 0) {
       const wallet = await tx.wallet.upsert({
         where: { barberProfileId: booking.barber.id },
         create: {
@@ -164,22 +260,22 @@ async function issueRefundForReport(
           availableInPence: 0,
         },
         update: {
-          pendingInPence: { decrement: payment.barberAmountInPence },
+          pendingInPence: { decrement: barberShare },
         },
       });
       await tx.walletTransaction.create({
         data: {
           walletId: wallet.id,
           type: "REFUND_REVERSAL",
-          amountInPence: payment.barberAmountInPence,
+          amountInPence: barberShare,
           bookingId: booking.id,
-          description: `Refund — ${reason}`,
+          description: isPartial
+            ? `Partial refund (£${(requested / 100).toFixed(2)}) — ${reason}`
+            : `Refund — ${reason}`,
         },
       });
     }
 
-    // Close this report + any other open refund-requested reports on this
-    // booking so admin doesn't have to resolve duplicates.
     await tx.report.update({
       where: { id: reportId },
       data: {
@@ -187,32 +283,52 @@ async function issueRefundForReport(
         adminNote: reason,
         resolvedById: adminId,
         resolvedAt: now,
+        refundedAmountInPence: requested,
       },
     });
-    await tx.report.updateMany({
-      where: {
-        bookingId: booking.id,
-        status: { in: ["OPEN", "UNDER_REVIEW"] },
-        id: { not: reportId },
-      },
+    await tx.reportEvent.create({
       data: {
-        status: "RESOLVED_REFUNDED",
-        adminNote: reason,
-        resolvedById: adminId,
-        resolvedAt: now,
+        reportId,
+        toStatus: "RESOLVED_REFUNDED",
+        description: isPartial
+          ? `Partial refund of £${(requested / 100).toFixed(2)} of £${(payment.amountInPence / 100).toFixed(2)}`
+          : `Full refund of £${(requested / 100).toFixed(2)}`,
+        actorId: adminId,
       },
     });
+    // Close this report + any other open refund-requested reports on this
+    // booking so admin doesn't have to resolve duplicates. Only do this on
+    // a FULL refund — partial refunds leave the booking intact, so other
+    // reports might still be valid follow-ups.
+    if (!isPartial) {
+      await tx.report.updateMany({
+        where: {
+          bookingId: booking.id,
+          status: { in: ["OPEN", "UNDER_REVIEW"] },
+          id: { not: reportId },
+        },
+        data: {
+          status: "RESOLVED_REFUNDED",
+          adminNote: reason,
+          resolvedById: adminId,
+          resolvedAt: now,
+        },
+      });
+    }
   });
 
+  const amountLabel = `£${(requested / 100).toFixed(2)}`;
   void sendPushToUser(booking.customerId, {
-    title: "Refund issued",
-    body: "Your refund has been processed. It should appear on your card within a few days.",
-    data: { type: "booking_status", bookingId: booking.id, status: "CANCELLED" },
+    title: isPartial ? "Partial refund issued" : "Refund issued",
+    body: `${amountLabel} has been refunded. It should appear on your card within a few days.`,
+    data: { type: "booking_status", bookingId: booking.id, status: isPartial ? booking.status : "CANCELLED" },
   });
   void sendPushToUser(booking.barber.userId, {
-    title: "Booking refunded",
-    body: "The customer's dispute was resolved with a refund.",
-    data: { type: "booking_status", bookingId: booking.id, status: "CANCELLED" },
+    title: isPartial ? "Partial refund issued" : "Booking refunded",
+    body: isPartial
+      ? `${amountLabel} was refunded to the customer.`
+      : "The customer's dispute was resolved with a refund.",
+    data: { type: "booking_status", bookingId: booking.id, status: isPartial ? booking.status : "CANCELLED" },
   });
 }
 

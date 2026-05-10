@@ -137,8 +137,9 @@ model BarberProfile {
   updatedAt DateTime     @updatedAt
 
   services     Service[]
-  availability AvailabilitySlot[]
-  settings     BarberSettings?
+  availability         AvailabilitySlot[]
+  availabilityExceptions AvailabilityException[]
+  settings             BarberSettings?
   wallet       Wallet?
   bookings     Booking[]      @relation("BarberBookings")
   reviews      Review[]
@@ -190,12 +191,31 @@ model AvailabilitySlot {
   @@index([barberProfileId])
 }
 
+// One-off overrides on top of the weekly AvailabilitySlot grid.
+// `isClosed = true` blocks the whole day; otherwise startTime/endTime
+// override the weekly slot for that single date.
+model AvailabilityException {
+  id              String        @id @default(uuid())
+  barberProfileId String
+  barberProfile   BarberProfile @relation(fields: [barberProfileId], references: [id], onDelete: Cascade)
+  date            DateTime      // Stored at UTC midnight.
+  isClosed        Boolean       @default(true)
+  startTime       String?       // "09:00" (HH:mm) — required when isClosed=false
+  endTime         String?       // "17:00" (HH:mm) — required when isClosed=false
+  reason          String?
+  createdAt       DateTime      @default(now())
+
+  @@unique([barberProfileId, date])
+  @@index([barberProfileId, date])
+}
+
 model BarberSettings {
   id                    String        @id @default(uuid())
   barberProfileId       String        @unique
   barberProfile         BarberProfile @relation(fields: [barberProfileId], references: [id], onDelete: Cascade)
   serviceRadiusMiles    Float         @default(5.0)
   minBookingNoticeHours Int           @default(2)
+  slotGranularityMinutes Int          @default(30) // Bookable-slot step size on the calendar.
   updatedAt             DateTime      @updatedAt
 }
 
@@ -209,6 +229,7 @@ model Booking {
   barber       BarberProfile @relation("BarberBookings", fields: [barberId], references: [id])
   date         DateTime
   startTime    String        // "09:30" (HH:mm)
+  endTime      String        // "10:00" (HH:mm) — startTime + sum(service.durationMinutes)
   status       BookingStatus @default(PENDING)
   address      String
   latitude     Float?
@@ -372,10 +393,16 @@ model Report {
   adminNote       String?
   resolvedById    String?
   resolvedAt      DateTime?
+  // Refunded amount in pence — null while the dispute is open, set on
+  // resolution (full refund = booking total; partial refund = explicit
+  // sub-amount). Lets the admin panel render "£12.50 of £30.00 refunded"
+  // without recomputing from the Stripe charge.
+  refundedAmountInPence Int?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
   images ReportImage[]
+  events ReportEvent[]
 
   @@index([bookingId])
   @@index([status])
@@ -390,6 +417,27 @@ model ReportImage {
   createdAt DateTime @default(now())
 
   @@index([reportId])
+}
+
+// Audit trail of state changes on a Report — surfaced in the admin
+// dispute detail page as a vertical timeline. Append-only; never edit
+// or delete a row.
+model ReportEvent {
+  id          String       @id @default(uuid())
+  reportId    String
+  report      Report       @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  // ToStatus is the status the report MOVED TO at this event. Null on
+  // CREATED / NOTE rows where the status didn't change.
+  toStatus    ReportStatus?
+  // Free-form description shown in the timeline (e.g. "Refunded £12.50",
+  // "Marked under review", "Dispute opened from Stripe webhook").
+  description String
+  // Admin user who triggered the event. Null for system / webhook
+  // events.
+  actorId     String?
+  createdAt   DateTime     @default(now())
+
+  @@index([reportId, createdAt])
 }
 
 // ─── REVIEW ───────────────────────────────────────

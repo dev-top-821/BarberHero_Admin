@@ -102,9 +102,12 @@ export async function POST(request: NextRequest) {
       case "charge.dispute.created": {
         // Card issuer chargeback. Stripe debits the platform balance
         // immediately and we have until the response_due_by date to submit
-        // evidence. We reverse any wallet credit, mark the payment DISPUTED,
-        // and open a refund-requested report so it lands in the admin
-        // disputes panel for follow-up.
+        // evidence. Per client decision 8 May 2026 — admin-alert-only
+        // (manual review): we reverse the wallet credit and open a Report
+        // so the chargeback lands in the admin disputes panel, but the
+        // barber is **not** auto-blocked. Admin reviews each case and can
+        // optionally invoke `blockBarberFromReport` on the dispute detail
+        // page if the pattern warrants it.
         await handleDisputeCreated(event.data.object as Stripe.Dispute);
         break;
       }
@@ -207,6 +210,12 @@ async function handleDisputeCreated(dispute: Stripe.Dispute): Promise<void> {
         description: `Card issuer dispute (${dispute.reason}). Stripe dispute id: ${dispute.id}.`,
         requestRefund: true,
         status: "OPEN",
+        events: {
+          create: {
+            toStatus: "OPEN",
+            description: `Stripe chargeback opened (${dispute.reason})`,
+          },
+        },
       },
     });
   });
@@ -251,17 +260,36 @@ async function handleDisputeClosed(dispute: Stripe.Dispute): Promise<void> {
   const outcome = dispute.status;
   if (outcome !== "won" && outcome !== "lost") return;
 
-  await prisma.report.updateMany({
+  const targetStatus = outcome === "won" ? "RESOLVED_NO_REFUND" : "RESOLVED_REFUNDED";
+  const matched = await prisma.report.findMany({
     where: {
       bookingId: payment.booking.id,
       requestRefund: true,
       status: "OPEN",
       description: { contains: dispute.id },
     },
-    data: {
-      status: outcome === "won" ? "RESOLVED_NO_REFUND" : "RESOLVED_REFUNDED",
-      adminNote: `Stripe dispute closed: ${outcome}`,
-      resolvedAt: new Date(),
-    },
+    select: { id: true },
+  });
+  if (matched.length === 0) return;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.report.updateMany({
+      where: { id: { in: matched.map((m) => m.id) } },
+      data: {
+        status: targetStatus,
+        adminNote: `Stripe dispute closed: ${outcome}`,
+        resolvedAt: new Date(),
+      },
+    });
+    await tx.reportEvent.createMany({
+      data: matched.map((m) => ({
+        reportId: m.id,
+        toStatus: targetStatus,
+        description:
+          outcome === "won"
+            ? "Stripe chargeback won — kept funds"
+            : "Stripe chargeback lost — refund issued",
+      })),
+    });
   });
 }

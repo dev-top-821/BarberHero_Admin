@@ -58,6 +58,11 @@ export async function PATCH(
       return errorResponse("INVALID_STATE", "Payment already refunded", 409);
     }
     try {
+      // Omitting `amount` refunds the full captured charge — i.e. service
+      // total + £4.99 platform fee. Per client decision 8 May 2026, the
+      // platform forfeits the £4.99 on a full admin-issued refund.
+      // (The partial-refund path in admin/(panel)/actions.ts handles the
+      // proportional split when admin enters a smaller amount.)
       await stripe.refunds.create(
         { payment_intent: payment.stripePaymentIntentId },
         { idempotencyKey: `pi-refund-${payment.id}` }
