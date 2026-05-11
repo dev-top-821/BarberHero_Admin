@@ -221,28 +221,33 @@ export default async function AdminRevenuePage() {
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <div className="flex items-end gap-2 h-48">
             {months.map((m, i) => {
-              const revH = Math.round((m.revenuePence / maxBarValue) * 100);
-              const refH = Math.round((m.refundsPence / maxBarValue) * 100);
+              const revH = (m.revenuePence / maxBarValue) * 100;
+              const refH = (m.refundsPence / maxBarValue) * 100;
               return (
-                <div key={i} className="flex-1 flex flex-col items-center">
-                  <div className="w-full flex items-end gap-1 h-full">
-                    <div
-                      className="flex-1 bg-[#D42B2B] rounded-t min-h-[2px]"
-                      style={{ height: `${revH}%` }}
-                      title={`Revenue: ${fmtGbp(m.revenuePence)}`}
-                    />
-                    <div
-                      className="flex-1 bg-gray-300 rounded-t min-h-[2px]"
-                      style={{ height: `${refH}%` }}
-                      title={`Refunds: ${fmtGbp(m.refundsPence)}`}
-                    />
-                  </div>
-                  <div className="mt-2 text-xs text-gray-500 font-medium">
-                    {MONTHS[m.month.getMonth()]}
-                  </div>
+                <div key={i} className="flex-1 h-full flex items-end gap-1">
+                  <div
+                    className={`flex-1 bg-[#D42B2B] rounded-t ${m.revenuePence > 0 ? "min-h-0.5" : ""}`}
+                    style={{ height: `${revH}%` }}
+                    title={`Revenue: ${fmtGbp(m.revenuePence)}`}
+                  />
+                  <div
+                    className={`flex-1 bg-gray-300 rounded-t ${m.refundsPence > 0 ? "min-h-0.5" : ""}`}
+                    style={{ height: `${refH}%` }}
+                    title={`Refunds: ${fmtGbp(m.refundsPence)}`}
+                  />
                 </div>
               );
             })}
+          </div>
+          <div className="flex gap-2 mt-2">
+            {months.map((m, i) => (
+              <div
+                key={i}
+                className="flex-1 text-center text-xs text-gray-500 font-medium"
+              >
+                {MONTHS[m.month.getMonth()]}
+              </div>
+            ))}
           </div>
           <div className="flex items-center gap-4 mt-4 text-xs text-gray-500">
             <span className="flex items-center gap-1.5">

@@ -160,7 +160,7 @@ export default function DisputeDetailActions({
               step={0.01}
               value={refundAmount}
               onChange={(e) => setRefundAmount(e.target.value)}
-              className="flex-1 px-2 py-1.5 bg-white border border-gray-200 rounded-md text-sm outline-none focus:ring-2 focus:ring-[#D42B2B]"
+              className="flex-1 px-2 py-1.5 bg-white border border-gray-200 rounded-md text-sm text-[#1A1A1A] placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#D42B2B] scheme-light"
             />
           </div>
           <p className="text-[11px] text-gray-500">
@@ -176,7 +176,7 @@ export default function DisputeDetailActions({
         onChange={(e) => setAdminNote(e.target.value)}
         placeholder="Internal admin note (shown in the audit log)"
         rows={3}
-        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#D42B2B]"
+        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-[#1A1A1A] placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#D42B2B] scheme-light"
       />
 
       <div className="space-y-2">
