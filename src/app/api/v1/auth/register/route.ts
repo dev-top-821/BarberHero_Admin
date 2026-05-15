@@ -4,6 +4,7 @@ import { hashPassword, generateAccessToken, generateRefreshToken } from "@/lib/a
 import { registerSchema } from "@/lib/validators/auth";
 import { jsonResponse, errorResponse } from "@/lib/api-utils";
 import { rateLimit } from "@/lib/redis";
+import { geocodePostcode } from "@/lib/geocode";
 
 function clientIp(request: NextRequest): string {
   const xff = request.headers.get("x-forwarded-for");
@@ -44,6 +45,15 @@ export async function POST(request: NextRequest) {
 
     const passwordHash = await hashPassword(password);
 
+    // Resolve the postcode to coordinates up front so the barber is
+    // map-eligible the moment they're approved. Best-effort: a failed
+    // lookup must never block sign-up — it's backfilled on profile save
+    // and gated again at submit-for-review.
+    const normalizedPostcode =
+      role === "BARBER" ? postcode!.trim().toUpperCase() : null;
+    const coords =
+      role === "BARBER" ? await geocodePostcode(normalizedPostcode) : null;
+
     const user = await prisma.user.create({
       data: {
         email,
@@ -54,7 +64,11 @@ export async function POST(request: NextRequest) {
         ...(role === "BARBER" && {
           barberProfile: {
             create: {
-              postcode: postcode!.trim().toUpperCase(),
+              postcode: normalizedPostcode!,
+              ...(coords && {
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+              }),
               settings: { create: {} },
               wallet: { create: {} },
             },

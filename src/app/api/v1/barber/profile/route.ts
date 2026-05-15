@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest, isAuthError, requireRole, jsonResponse, errorResponse } from "@/lib/api-utils";
+import { geocodePostcode } from "@/lib/geocode";
 
 export async function GET(request: NextRequest) {
   const auth = await authenticateRequest(request);
@@ -56,6 +57,23 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const { bio, experience, address, latitude, longitude, postcode } = body;
 
+    const normalizedPostcode =
+      postcode !== undefined && typeof postcode === "string"
+        ? postcode.trim().toUpperCase()
+        : postcode;
+
+    // Keep coordinates in sync with the postcode. Explicit lat/lng in the
+    // body win (e.g. a future map-pin picker); otherwise, when the
+    // postcode changes, re-geocode it so the barber stays map-eligible.
+    // Best-effort — a failed lookup just leaves coords as-is.
+    const explicitCoords = latitude !== undefined && longitude !== undefined;
+    const geo =
+      !explicitCoords && postcode !== undefined
+        ? await geocodePostcode(
+            typeof normalizedPostcode === "string" ? normalizedPostcode : null
+          )
+        : null;
+
     const profile = await prisma.barberProfile.update({
       where: { userId: auth.id },
       data: {
@@ -64,9 +82,8 @@ export async function PATCH(request: NextRequest) {
         ...(address !== undefined && { address }),
         ...(latitude !== undefined && { latitude }),
         ...(longitude !== undefined && { longitude }),
-        ...(postcode !== undefined && {
-          postcode: typeof postcode === "string" ? postcode.trim().toUpperCase() : postcode,
-        }),
+        ...(postcode !== undefined && { postcode: normalizedPostcode }),
+        ...(geo && { latitude: geo.latitude, longitude: geo.longitude }),
       },
     });
 

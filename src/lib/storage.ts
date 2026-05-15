@@ -19,6 +19,63 @@ export function isAllowedImageType(contentType: string): boolean {
 }
 
 /**
+ * Detect the image type from the file's magic bytes, independent of any
+ * declared Content-Type. Needed because the Flutter client builds its
+ * multipart parts without a content type, so dio sends
+ * `application/octet-stream` and `File.type` can't be trusted. Returns an
+ * allowed `image/*` type, or null if the bytes aren't a supported image.
+ */
+export function sniffImageType(bytes: Uint8Array): string | null {
+  if (bytes.length < 12) return null;
+
+  // JPEG: FF D8 FF
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e &&
+    bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a &&
+    bytes[6] === 0x1a && bytes[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+
+  const ascii = (start: number, len: number) =>
+    String.fromCharCode(...bytes.subarray(start, start + len));
+
+  // WebP: "RIFF" .... "WEBP"
+  if (ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP") {
+    return "image/webp";
+  }
+  // HEIF/HEIC: ISO-BMFF "ftyp" box at offset 4, brand at offset 8
+  if (ascii(4, 4) === "ftyp") {
+    const brand = ascii(8, 4).toLowerCase();
+    if (brand === "mif1" || brand === "msf1" || brand === "heif") {
+      return "image/heif";
+    }
+    // heic, heix, hevc, hevx, heim, heis, hevm, hevs, … → heic
+    return "image/heic";
+  }
+
+  return null;
+}
+
+/**
+ * The content type to store an upload as. Trusts the client's declared
+ * type when it's an allowed image; otherwise (missing / octet-stream /
+ * spoofed) falls back to sniffing the magic bytes. Returns null when the
+ * bytes are not a supported image — callers should respond 400.
+ */
+export function resolveImageContentType(
+  declaredType: string,
+  bytes: Uint8Array
+): string | null {
+  if (isAllowedImageType(declaredType)) return declaredType.toLowerCase();
+  return sniffImageType(bytes);
+}
+
+/**
  * Root directory for user-uploaded photos. Configured via PHOTOS_DIR
  * env var and mounted as a Render Persistent Disk in production.
  * Defaults to `./uploads` for local dev.

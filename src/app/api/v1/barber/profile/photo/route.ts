@@ -9,7 +9,7 @@ import {
 } from "@/lib/api-utils";
 import {
   saveToDisk,
-  isAllowedImageType,
+  resolveImageContentType,
   MAX_UPLOAD_BYTES,
   getPublicOrigin,
 } from "@/lib/storage";
@@ -29,9 +29,6 @@ export async function POST(request: NextRequest) {
     if (!(file instanceof File)) {
       return errorResponse("INVALID_INPUT", "Missing `file` field");
     }
-    if (!isAllowedImageType(file.type)) {
-      return errorResponse("INVALID_INPUT", "Unsupported content type");
-    }
     if (file.size > MAX_UPLOAD_BYTES) {
       return errorResponse(
         "FILE_TOO_LARGE",
@@ -41,12 +38,18 @@ export async function POST(request: NextRequest) {
     }
 
     const bytes = new Uint8Array(await file.arrayBuffer());
+    // The Flutter client sends no part Content-Type (dio defaults to
+    // application/octet-stream), so fall back to sniffing magic bytes.
+    const contentType = resolveImageContentType(file.type, bytes);
+    if (!contentType) {
+      return errorResponse("INVALID_INPUT", "Unsupported content type");
+    }
     const origin = getPublicOrigin(request);
     const { url } = await saveToDisk({
       bytes,
       userId: auth.id,
       kind: "profile",
-      contentType: file.type,
+      contentType,
       origin,
     });
 

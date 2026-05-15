@@ -7,6 +7,7 @@ import {
   jsonResponse,
   errorResponse,
 } from "@/lib/api-utils";
+import { geocodePostcode } from "@/lib/geocode";
 
 const MIN_PORTFOLIO_PHOTOS = 2;
 const MIN_BIO_CHARS = 50;
@@ -65,7 +66,32 @@ export async function POST(request: NextRequest) {
       missing.push("services");
     }
 
-    if (!profile.postcode) missing.push("postcode");
+    const hasPostcode = Boolean(profile.postcode);
+    if (!hasPostcode) missing.push("postcode");
+
+    // The customer map (GET /api/v1/barbers/nearby) hard-requires non-null
+    // latitude/longitude — without them an approved barber never appears.
+    // Self-heal here: an older account, or one whose sign-up geocode
+    // failed transiently, may have a postcode but no coords. Try once
+    // more and persist before deciding whether to block.
+    let { latitude, longitude } = profile;
+    if ((latitude == null || longitude == null) && hasPostcode) {
+      const geo = await geocodePostcode(profile.postcode);
+      if (geo) {
+        latitude = geo.latitude;
+        longitude = geo.longitude;
+        await prisma.barberProfile.update({
+          where: { id: profile.id },
+          data: { latitude, longitude },
+        });
+      }
+    }
+    // Still no coords despite having a postcode → the postcode itself is
+    // unrecognised. Surface it as a postcode problem (an actionable token
+    // the barber already understands) rather than a new opaque one.
+    if ((latitude == null || longitude == null) && hasPostcode) {
+      missing.push("postcode");
+    }
 
     if (missing.length > 0) {
       return errorResponse(
