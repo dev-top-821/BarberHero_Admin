@@ -56,24 +56,59 @@ export async function POST(
     if (!payment) {
       return errorResponse("INVALID_STATE", "No payment on this booking", 409);
     }
-    if (payment.status !== "HELD") {
+
+    // Stripe — not our local Payment.status — is the source of truth for
+    // whether the hold can be captured. A stray/late webhook can drift
+    // the mirror (e.g. to FAILED), which is exactly what produced the
+    // "Cannot capture a payment in status Failed" error while Stripe
+    // still showed "authorised, not captured". Decide from the live
+    // PaymentIntent instead.
+    let pi;
+    try {
+      pi = await stripe.paymentIntents.retrieve(payment.stripePaymentIntentId);
+    } catch {
+      return errorResponse(
+        "STRIPE_ERROR",
+        "Could not verify the payment with Stripe",
+        502
+      );
+    }
+
+    if (payment.status === "REFUNDED" || payment.status === "DISPUTED") {
       return errorResponse(
         "INVALID_STATE",
-        `Cannot capture a payment in status ${payment.status}`,
+        `This booking's payment is ${payment.status.toLowerCase()} and cannot be captured.`,
         409
       );
     }
 
-    // Capture first — if Stripe fails, we don't want to touch the DB.
-    try {
-      await stripe.paymentIntents.capture(
-        payment.stripePaymentIntentId,
-        undefined,
-        { idempotencyKey: `pi-capture-${payment.id}` }
+    if (pi.status === "requires_capture") {
+      try {
+        await stripe.paymentIntents.capture(
+          payment.stripePaymentIntentId,
+          undefined,
+          { idempotencyKey: `pi-capture-${payment.id}` }
+        );
+      } catch {
+        return errorResponse("STRIPE_ERROR", "Could not capture payment", 502);
+      }
+    } else if (pi.status === "succeeded") {
+      // Already captured at Stripe (an earlier attempt captured but our
+      // DB write was lost). Don't capture again — fall through and
+      // reconcile our records.
+    } else {
+      return errorResponse(
+        "PAYMENT_NOT_AUTHORIZED",
+        `The customer's payment is not authorised (status: ${pi.status}). Ask them to complete the payment again before entering the code.`,
+        409
       );
-    } catch {
-      return errorResponse("STRIPE_ERROR", "Could not capture payment", 502);
     }
+
+    // Guard against double-crediting if a previous run already moved the
+    // wallet (would only happen under webhook/DB drift — the used-code
+    // check above blocks the normal repeat).
+    const alreadyCredited =
+      payment.status === "PENDING_RELEASE" || payment.status === "RELEASED";
 
     const now = new Date();
     const heldUntil = new Date(now.getTime() + HOLD_DURATION_MS);
@@ -90,36 +125,40 @@ export async function POST(
         select: { customerId: true, barberId: true },
       });
 
-      await tx.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: "PENDING_RELEASE",
-          capturedAt: now,
-          heldUntil,
-        },
-      });
+      // Don't downgrade an already-RELEASED payment, and only move the
+      // wallet once.
+      if (!alreadyCredited) {
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: "PENDING_RELEASE",
+            capturedAt: now,
+            heldUntil,
+          },
+        });
 
-      // Upsert wallet — first earning creates it on demand.
-      const wallet = await tx.wallet.upsert({
-        where: { barberProfileId: booking.barberId },
-        create: {
-          barberProfileId: booking.barberId,
-          pendingInPence: payment.barberAmountInPence,
-        },
-        update: {
-          pendingInPence: { increment: payment.barberAmountInPence },
-        },
-      });
+        // Upsert wallet — first earning creates it on demand.
+        const wallet = await tx.wallet.upsert({
+          where: { barberProfileId: booking.barberId },
+          create: {
+            barberProfileId: booking.barberId,
+            pendingInPence: payment.barberAmountInPence,
+          },
+          update: {
+            pendingInPence: { increment: payment.barberAmountInPence },
+          },
+        });
 
-      await tx.walletTransaction.create({
-        data: {
-          walletId: wallet.id,
-          type: "PENDING_CREDIT",
-          amountInPence: payment.barberAmountInPence,
-          bookingId: id,
-          description: "Service started — pending release",
-        },
-      });
+        await tx.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            type: "PENDING_CREDIT",
+            amountInPence: payment.barberAmountInPence,
+            bookingId: id,
+            description: "Service started — pending release",
+          },
+        });
+      }
 
       return [null, booking] as const;
     });

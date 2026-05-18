@@ -8,6 +8,7 @@ import {
   errorResponse,
 } from "@/lib/api-utils";
 import { geocodePostcode } from "@/lib/geocode";
+import { TERMS_VERSION } from "@/lib/legal";
 
 const MIN_PORTFOLIO_PHOTOS = 2;
 const MIN_BIO_CHARS = 50;
@@ -64,6 +65,27 @@ export async function POST(request: NextRequest) {
 
     if (profile.services.length < 1) {
       missing.push("services");
+    }
+
+    // Years of experience — required, whole number, minimum 1 year
+    // (client request, May-2026 feedback round). Stored as a string in
+    // BarberProfile.experience to avoid a schema migration.
+    const experienceYears = Number.parseInt(
+      (profile.experience ?? "").trim(),
+      10
+    );
+    if (!Number.isInteger(experienceYears) || experienceYears < 1) {
+      missing.push("experience");
+    }
+
+    // Terms & Conditions + Privacy Policy must be accepted at the current
+    // version before an application can be submitted (client request,
+    // May-2026 — legal/security before go-live).
+    if (
+      !profile.termsAcceptedAt ||
+      profile.termsVersion !== TERMS_VERSION
+    ) {
+      missing.push("terms");
     }
 
     const hasPostcode = Boolean(profile.postcode);

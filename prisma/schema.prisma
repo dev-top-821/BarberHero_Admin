@@ -98,6 +98,12 @@ model User {
   role         UserRole
   isBlocked    Boolean  @default(false)
   fcmToken     String?
+  // Customer-side T&C / Privacy acceptance. (Barbers record acceptance on
+  // BarberProfile.termsAcceptedAt — kept separate so the existing barber
+  // accept-terms endpoint is untouched.) `termsVersion` is the legal-doc
+  // version accepted; gates require it to equal the current TERMS_VERSION.
+  termsAcceptedAt DateTime?
+  termsVersion    String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { jsonResponse, errorResponse } from "@/lib/api-utils";
+import { toPublicPhotoUrl } from "@/lib/storage";
 
 // Public: guests browse the map before signing up.
 export async function GET(request: NextRequest) {
@@ -99,6 +100,9 @@ export async function GET(request: NextRequest) {
     const serialized = barbers.map((b) => ({
       ...b,
       reviewCount: Number(b.reviewCount),
+      // Resolve the photo host fresh so map markers render the barber's
+      // photo instead of falling back to their initial.
+      profilePhoto: toPublicPhotoUrl(b.profilePhoto, request),
     }));
 
     return jsonResponse({ barbers: serialized });

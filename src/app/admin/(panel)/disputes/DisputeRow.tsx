@@ -132,8 +132,9 @@ export default function DisputeRow({ dispute: d }: { dispute: DisputeData }) {
       variant: "success",
     },
     RESOLVE_REFUND: {
-      title: "Resolve with Refund?",
-      description: "The customer will be refunded via Stripe. This action cannot be undone.",
+      title: "Approve dispute & refund?",
+      description:
+        "The customer is refunded the service amount via Stripe. The £4.99 platform fee is kept, the barber receives £0, and the booking is cancelled. This cannot be undone.",
       confirmLabel: "Refund & Resolve",
       variant: "danger",
     },

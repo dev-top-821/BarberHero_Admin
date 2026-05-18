@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripe";
 import {
   authenticateRequest,
   isAuthError,
@@ -9,6 +8,7 @@ import {
   errorResponse,
 } from "@/lib/api-utils";
 import { resolveReportSchema } from "@/lib/validators/reports";
+import { refundBookingForDispute } from "@/lib/refunds";
 
 export async function PATCH(
   request: NextRequest,
@@ -35,55 +35,47 @@ export async function PATCH(
 
   const report = await prisma.report.findUnique({
     where: { id },
-    include: { booking: { include: { payment: true } } },
+    select: { id: true, bookingId: true, adminNote: true },
   });
   if (!report) return errorResponse("NOT_FOUND", "Report not found", 404);
 
   const { action, adminNote } = parsed.data;
 
+  // Refund path: single shared routine (service refunded, £4.99 kept,
+  // barber £0, booking cancelled, reports closed). See @/lib/refunds.
+  if (action === "RESOLVE_REFUND") {
+    const result = await refundBookingForDispute({
+      bookingId: report.bookingId,
+      adminId: auth.id,
+      adminNote,
+      reportId: id,
+    });
+    if (!result.ok) {
+      const status =
+        result.code === "NOT_FOUND"
+          ? 404
+          : result.code === "STRIPE_ERROR"
+          ? 502
+          : 409;
+      return errorResponse(result.code, result.message, status);
+    }
+    const updated = await prisma.report.findUnique({
+      where: { id },
+      include: { images: true },
+    });
+    return jsonResponse({ report: updated });
+  }
+
   const statusMap = {
     UNDER_REVIEW: "UNDER_REVIEW",
-    RESOLVE_REFUND: "RESOLVED_REFUNDED",
     RESOLVE_NO_REFUND: "RESOLVED_NO_REFUND",
     REJECT: "REJECTED",
   } as const;
 
-  // Issue Stripe refund if requested and payment is held
-  if (action === "RESOLVE_REFUND") {
-    const payment = report.booking.payment;
-    if (!payment) {
-      return errorResponse("INVALID_STATE", "No payment to refund", 409);
-    }
-    if (payment.status === "REFUNDED") {
-      return errorResponse("INVALID_STATE", "Payment already refunded", 409);
-    }
-    try {
-      // Omitting `amount` refunds the full captured charge — i.e. service
-      // total + £4.99 platform fee. Per client decision 8 May 2026, the
-      // platform forfeits the £4.99 on a full admin-issued refund.
-      // (The partial-refund path in admin/(panel)/actions.ts handles the
-      // proportional split when admin enters a smaller amount.)
-      await stripe.refunds.create(
-        { payment_intent: payment.stripePaymentIntentId },
-        { idempotencyKey: `pi-refund-${payment.id}` }
-      );
-    } catch {
-      return errorResponse("STRIPE_ERROR", "Refund failed at Stripe", 502);
-    }
-    await prisma.payment.update({
-      where: { id: payment.id },
-      data: {
-        status: "REFUNDED",
-        refundedAt: new Date(),
-        refundReason: `Dispute ${report.id}`,
-      },
-    });
-  }
-
   const updated = await prisma.report.update({
     where: { id },
     data: {
-      status: statusMap[action],
+      status: statusMap[action as keyof typeof statusMap],
       adminNote: adminNote ?? report.adminNote,
       resolvedById: action === "UNDER_REVIEW" ? null : auth.id,
       resolvedAt: action === "UNDER_REVIEW" ? null : new Date(),

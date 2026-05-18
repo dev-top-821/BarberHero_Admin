@@ -12,6 +12,7 @@ import {
   resolveImageContentType,
   MAX_UPLOAD_BYTES,
   getPublicOrigin,
+  toPublicPhotoUrl,
 } from "@/lib/storage";
 
 const MAX_PORTFOLIO_PHOTOS = 6;
@@ -35,7 +36,14 @@ export async function GET(request: NextRequest) {
       orderBy: { order: "asc" },
     });
 
-    return jsonResponse({ photos });
+    // Resolve the host fresh so the onboarding portfolio grid previews
+    // the uploaded photos rather than showing blank tiles.
+    const withFreshUrls = photos.map((p) => ({
+      ...p,
+      url: toPublicPhotoUrl(p.url, request) ?? p.url,
+    }));
+
+    return jsonResponse({ photos: withFreshUrls });
   } catch {
     return errorResponse("SERVER_ERROR", "An unexpected error occurred", 500);
   }

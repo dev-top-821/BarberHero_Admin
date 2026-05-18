@@ -23,12 +23,23 @@ function initials(name: string) {
 export default async function AdminUsersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; search?: string }>;
 }) {
   const params = await searchParams;
   const page = Math.max(1, parseInt(params.page ?? "1") || 1);
+  const search = (params.search ?? "").trim();
 
-  const where = { role: "CUSTOMER" as const };
+  const where = {
+    role: "CUSTOMER" as const,
+    ...(search
+      ? {
+          OR: [
+            { fullName: { contains: search, mode: "insensitive" as const } },
+            { email: { contains: search, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+  };
 
   const [users, total] = await Promise.all([
     prisma.user.findMany({
@@ -40,6 +51,8 @@ export default async function AdminUsersPage({
         phone: true,
         profilePhoto: true,
         isBlocked: true,
+        termsAcceptedAt: true,
+        termsVersion: true,
         createdAt: true,
         _count: { select: { bookings: true } },
       },
@@ -57,14 +70,20 @@ export default async function AdminUsersPage({
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-4">
       <div className="flex">
-        <div className="relative w-full sm:w-64 sm:ml-auto">
+        <form
+          method="get"
+          action="/admin/users"
+          className="relative w-full sm:w-64 sm:ml-auto"
+        >
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <input
+            name="search"
             type="search"
-            placeholder="Search users..."
+            defaultValue={search}
+            placeholder="Search by name or email…"
             className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-[#1A1A1A] placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#D42B2B]"
           />
-        </div>
+        </form>
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -76,6 +95,7 @@ export default async function AdminUsersPage({
                 <th className="px-6 py-3 font-medium">Contact information</th>
                 <th className="px-6 py-3 font-medium">Bookings</th>
                 <th className="px-6 py-3 font-medium">Status</th>
+                <th className="px-6 py-3 font-medium">Terms</th>
                 <th className="px-6 py-3 font-medium">Joined</th>
                 <th className="px-6 py-3 font-medium text-right">Operations</th>
               </tr>
@@ -83,7 +103,7 @@ export default async function AdminUsersPage({
             <tbody className="divide-y divide-gray-100">
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-16 text-center text-gray-400">
+                  <td colSpan={7} className="px-6 py-16 text-center text-gray-400">
                     No users found
                   </td>
                 </tr>
@@ -131,6 +151,22 @@ export default async function AdminUsersPage({
                         {u.isBlocked ? "Blocked" : "Active"}
                       </span>
                     </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${
+                          u.termsAcceptedAt
+                            ? "bg-green-100 text-green-700"
+                            : "bg-gray-100 text-gray-500"
+                        }`}
+                        title={
+                          u.termsAcceptedAt
+                            ? `v${u.termsVersion ?? "?"} · ${dateFmt.format(u.termsAcceptedAt)}`
+                            : "Not accepted"
+                        }
+                      >
+                        {u.termsAcceptedAt ? `v${u.termsVersion ?? "?"}` : "—"}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 text-gray-600 whitespace-nowrap">
                       {dateFmt.format(u.createdAt)}
                     </td>
@@ -148,7 +184,7 @@ export default async function AdminUsersPage({
           <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">
             Showing {from}-{to} of {total.toLocaleString()} entries
           </p>
-          <Pagination page={page} totalPages={totalPages} />
+          <Pagination page={page} totalPages={totalPages} search={search} />
         </div>
       </div>
     </div>
@@ -158,11 +194,14 @@ export default async function AdminUsersPage({
 function Pagination({
   page,
   totalPages,
+  search,
 }: {
   page: number;
   totalPages: number;
+  search: string;
 }) {
-  const makeHref = (p: number) => `/admin/users?page=${p}`;
+  const q = search ? `search=${encodeURIComponent(search)}&` : "";
+  const makeHref = (p: number) => `/admin/users?${q}page=${p}`;
 
   const pages: (number | "…")[] = [];
   if (totalPages <= 5) {

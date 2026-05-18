@@ -2,8 +2,9 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { stripe, PLATFORM_FEE_PENCE, MIN_BOOKING_PENCE } from "@/lib/stripe";
 import { authenticateRequest, isAuthError, requireRole, jsonResponse, errorResponse } from "@/lib/api-utils";
-import { sendPushToUser } from "@/lib/push";
 import { redactPhonesByStatus } from "@/lib/booking-privacy";
+import { toPublicPhotoUrl } from "@/lib/storage";
+import { TERMS_VERSION } from "@/lib/legal";
 import {
   ACTIVE_BOOKING_STATUSES,
   dateOnlyToUTCStartOfDay,
@@ -23,10 +24,19 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
 
+    // The barber must never see a booking whose card hasn't been
+    // authorized yet (signed flow §5.4: customer pays first). A freshly
+    // created booking's Payment is FAILED until the hold is confirmed,
+    // so gate the barber's list on the payment being past that marker.
+    // The customer always sees their own bookings regardless of payment
+    // state so they can complete or retry the payment.
     const where =
       auth.role === "CUSTOMER"
         ? { customerId: auth.id }
-        : { barber: { userId: auth.id } };
+        : {
+            barber: { userId: auth.id },
+            payment: { is: { status: { not: "FAILED" as const } } },
+          };
 
     const bookings = await prisma.booking.findMany({
       where: {
@@ -51,7 +61,24 @@ export async function GET(request: NextRequest) {
     // deferred in favour of a simple visibility gate).
     const redacted = bookings.map(redactPhonesByStatus);
 
-    return jsonResponse({ bookings: redacted });
+    // Resolve photo hosts fresh so booking cards show the other party's
+    // photo instead of a placeholder initial.
+    const withPhotos = redacted.map((b) => ({
+      ...b,
+      customer: {
+        ...b.customer,
+        profilePhoto: toPublicPhotoUrl(b.customer.profilePhoto, request),
+      },
+      barber: {
+        ...b.barber,
+        user: {
+          ...b.barber.user,
+          profilePhoto: toPublicPhotoUrl(b.barber.user.profilePhoto, request),
+        },
+      },
+    }));
+
+    return jsonResponse({ bookings: withPhotos });
   } catch {
     return errorResponse("SERVER_ERROR", "An unexpected error occurred", 500);
   }
@@ -174,8 +201,23 @@ export async function POST(request: NextRequest) {
 
     const customer = await prisma.user.findUnique({
       where: { id: auth.id },
-      select: { email: true },
+      select: { email: true, termsAcceptedAt: true, termsVersion: true },
     });
+
+    // Terms & Conditions + Privacy Policy must be accepted at the current
+    // version before a booking/payment can be created (client request,
+    // May-2026 — legal/security before go-live). The app collects this on
+    // the payment screen; this is the server-side enforcement.
+    if (
+      !customer?.termsAcceptedAt ||
+      customer.termsVersion !== TERMS_VERSION
+    ) {
+      return errorResponse(
+        "TERMS_NOT_ACCEPTED",
+        "Please accept the Terms & Conditions and Privacy Policy to continue.",
+        403
+      );
+    }
 
     const booking = await prisma.booking.create({
       data: {
@@ -241,6 +283,20 @@ export async function POST(request: NextRequest) {
       return errorResponse("STRIPE_ERROR", "Could not initialise payment", 502);
     }
 
+    // IMPORTANT (signed flow §5.4): the customer "books AND pays" BEFORE
+    // the barber sees the request. The PaymentIntent above is only
+    // *created* here — the card isn't authorized until the client
+    // confirms it via the returned client_secret.
+    //
+    // So the Payment starts as FAILED, meaning "awaiting card
+    // authorization / not a usable payment yet". It is promoted to HELD
+    // only once Stripe confirms the manual-capture hold is in place —
+    // driven by POST /bookings/:id/confirm-payment (fast path) and the
+    // `payment_intent.amount_capturable_updated` webhook (backup). The
+    // barber is notified, and the booking becomes visible to them, at
+    // that moment — never before. (Reusing the existing FAILED enum
+    // value keeps this a no-migration change; nothing auto-acts on a
+    // FAILED manual-capture PI before it is authorized.)
     await prisma.payment.create({
       data: {
         bookingId: booking.id,
@@ -248,14 +304,8 @@ export async function POST(request: NextRequest) {
         amountInPence: chargeInPence,
         platformFeeInPence: PLATFORM_FEE_PENCE,
         barberAmountInPence: serviceTotalInPence,
-        status: "HELD",
+        status: "FAILED",
       },
-    });
-
-    void sendPushToUser(booking.barber.userId, {
-      title: "New booking request",
-      body: `${booking.customer.fullName} requested a booking on ${booking.startTime}.`,
-      data: { type: "booking_request", bookingId: booking.id },
     });
 
     return jsonResponse(

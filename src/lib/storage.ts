@@ -123,6 +123,30 @@ export function getPublicOrigin(request: Request): string {
 }
 
 /**
+ * Re-origin a stored photo URL to the CURRENT public origin.
+ *
+ * Photo URLs are built and frozen at upload time (saveToDisk). Behind
+ * Render's proxy the origin captured then can be wrong/stale (internal
+ * host, an old domain), which makes the apps fall back to the barber's
+ * initial letter on the map and show no profile/portfolio photos. We
+ * store the path; the host should always be resolved fresh on read.
+ *
+ * Anything that isn't one of our `/api/v1/photos/` URLs is returned
+ * untouched (external URL, already-relative, null).
+ */
+export function toPublicPhotoUrl(
+  stored: string | null | undefined,
+  request: Request
+): string | null {
+  if (!stored) return null;
+  const marker = "/api/v1/photos/";
+  const i = stored.indexOf(marker);
+  if (i === -1) return stored;
+  const path = stored.slice(i + marker.length);
+  return `${getPublicOrigin(request)}${marker}${path}`;
+}
+
+/**
  * Persist an uploaded file to the photos disk. Returns a disk-relative
  * path like `barber-photos/{userId}/profile-{uuid}.jpg` and the public URL
  * that the app can render directly (served by GET /api/v1/photos/[...path]).

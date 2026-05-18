@@ -17,15 +17,27 @@ export async function POST(
 
     const booking = await prisma.booking.findUnique({
       where: { id },
-      select: { customerId: true, barberId: true, status: true },
+      select: {
+        customerId: true,
+        barberId: true,
+        status: true,
+        payment: { select: { status: true } },
+      },
     });
 
     if (!booking || booking.customerId !== auth.id) {
       return errorResponse("NOT_FOUND", "Booking not found", 404);
     }
 
-    if (booking.status !== "COMPLETED") {
-      return errorResponse("INVALID_STATUS", "Can only review completed bookings");
+    // A completed booking is reviewable; so is any refunded booking
+    // (client decision, May-2026 feedback round — customers may still
+    // leave a review after a dispute refund).
+    const isRefunded = booking.payment?.status === "REFUNDED";
+    if (booking.status !== "COMPLETED" && !isRefunded) {
+      return errorResponse(
+        "INVALID_STATUS",
+        "You can only review a completed or refunded booking"
+      );
     }
 
     const review = await prisma.review.create({

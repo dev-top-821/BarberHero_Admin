@@ -34,17 +34,53 @@ export async function POST(request: NextRequest) {
   try {
     switch (event.type) {
       case "payment_intent.amount_capturable_updated": {
-        // The auth succeeded and funds are ready to capture. Nothing to do —
-        // our booking is already in PENDING/CONFIRMED and Payment is HELD.
+        // The manual-capture hold is now in place. This is the canonical
+        // "customer has paid" signal — promote the Payment FAILED → HELD
+        // and notify the barber. Backup for POST /bookings/:id/confirm-
+        // payment; the FAILED→HELD updateMany guarantees the barber is
+        // pushed exactly once regardless of which path wins.
+        const pi = event.data.object as Stripe.PaymentIntent;
+        const payment = await prisma.payment.findUnique({
+          where: { stripePaymentIntentId: pi.id },
+          select: {
+            id: true,
+            status: true,
+            booking: {
+              select: {
+                id: true,
+                startTime: true,
+                customer: { select: { fullName: true } },
+                barber: { select: { userId: true } },
+              },
+            },
+          },
+        });
+        if (payment && payment.status === "FAILED") {
+          const promoted = await prisma.payment.updateMany({
+            where: { id: payment.id, status: "FAILED" },
+            data: { status: "HELD" },
+          });
+          if (promoted.count === 1) {
+            void sendPushToUser(payment.booking.barber.userId, {
+              title: "New booking request",
+              body: `${payment.booking.customer.fullName} requested a booking on ${payment.booking.startTime}.`,
+              data: { type: "booking_request", bookingId: payment.booking.id },
+            });
+          }
+        }
         break;
       }
 
       case "payment_intent.succeeded": {
         const pi = event.data.object as Stripe.PaymentIntent;
+        // Only reconcile a payment that's still HELD (captured out-of-band
+        // without our verify endpoint). Never touch FAILED (that's now the
+        // pre-authorization marker) or PENDING_RELEASE/RELEASED (the 24h
+        // hold cron owns those).
         await prisma.payment.updateMany({
           where: {
             stripePaymentIntentId: pi.id,
-            status: { in: ["HELD", "FAILED"] },
+            status: "HELD",
           },
           data: {
             status: "RELEASED",
@@ -73,8 +109,25 @@ export async function POST(request: NextRequest) {
 
       case "payment_intent.payment_failed": {
         const pi = event.data.object as Stripe.PaymentIntent;
+        // A failed/declined attempt only matters before authorization.
+        // NEVER downgrade a payment that's already in a good or terminal
+        // state — a stray late `payment_failed` flipping a HELD payment
+        // to FAILED is exactly what caused the "Cannot capture a payment
+        // in status Failed" bug. (verify also reconciles against Stripe's
+        // real PI state as a second line of defence.)
         await prisma.payment.updateMany({
-          where: { stripePaymentIntentId: pi.id },
+          where: {
+            stripePaymentIntentId: pi.id,
+            status: {
+              notIn: [
+                "HELD",
+                "PENDING_RELEASE",
+                "RELEASED",
+                "REFUNDED",
+                "DISPUTED",
+              ],
+            },
+          },
           data: { status: "FAILED" },
         });
         break;

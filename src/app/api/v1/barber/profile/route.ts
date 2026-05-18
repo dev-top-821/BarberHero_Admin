@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest, isAuthError, requireRole, jsonResponse, errorResponse } from "@/lib/api-utils";
 import { geocodePostcode } from "@/lib/geocode";
+import { toPublicPhotoUrl } from "@/lib/storage";
 
 export async function GET(request: NextRequest) {
   const auth = await authenticateRequest(request);
@@ -38,6 +39,17 @@ export async function GET(request: NextRequest) {
     return jsonResponse({
       profile: {
         ...profile,
+        // Resolve photo hosts fresh so the barber's own onboarding /
+        // edit screen previews the uploaded images instead of showing
+        // an empty circle (same root cause as the customer-side photos).
+        user: {
+          ...profile.user,
+          profilePhoto: toPublicPhotoUrl(profile.user.profilePhoto, request),
+        },
+        photos: profile.photos.map((p) => ({
+          ...p,
+          url: toPublicPhotoUrl(p.url, request) ?? p.url,
+        })),
         rating: ratingAgg._avg.rating ?? 0,
         reviewCount: ratingAgg._count.rating,
       },

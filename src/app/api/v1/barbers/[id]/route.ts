@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { jsonResponse, errorResponse } from "@/lib/api-utils";
+import { toPublicPhotoUrl } from "@/lib/storage";
 
 // Public: guests can view a barber profile before signing up.
 export async function GET(
@@ -38,6 +39,16 @@ export async function GET(
     return jsonResponse({
       barber: {
         ...barber,
+        // Resolve photo hosts fresh so the profile photo + portfolio
+        // actually render in the customer app.
+        user: {
+          ...barber.user,
+          profilePhoto: toPublicPhotoUrl(barber.user.profilePhoto, request),
+        },
+        photos: barber.photos.map((p) => ({
+          ...p,
+          url: toPublicPhotoUrl(p.url, request) ?? p.url,
+        })),
         rating: ratingAgg._avg.rating ?? 0,
         reviewCount: ratingAgg._count.rating,
       },

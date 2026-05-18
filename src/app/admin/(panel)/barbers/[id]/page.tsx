@@ -136,12 +136,24 @@ export default async function BarberDetailPage({
                 <dd className="text-[#1A1A1A] font-medium">{barber.address ?? "—"}</dd>
               </div>
               <div>
+                <dt className="text-gray-500">Postcode</dt>
+                <dd className="text-[#1A1A1A] font-medium">{barber.postcode ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-gray-500">Terms accepted</dt>
+                <dd className="text-[#1A1A1A] font-medium">
+                  {barber.termsAcceptedAt
+                    ? `v${barber.termsVersion ?? "?"} · ${dateFmt.format(barber.termsAcceptedAt)}`
+                    : "Not accepted"}
+                </dd>
+              </div>
+              <div>
                 <dt className="text-gray-500">Joined</dt>
                 <dd className="text-[#1A1A1A] font-medium">{dateFmt.format(barber.user.createdAt)}</dd>
               </div>
               <div>
                 <dt className="text-gray-500">Experience</dt>
-                <dd className="text-[#1A1A1A] font-medium">{barber.experience ?? "—"}</dd>
+                <dd className="text-[#1A1A1A] font-medium">{fmtExperience(barber.experience)}</dd>
               </div>
               <div>
                 <dt className="text-gray-500">Service radius</dt>
@@ -331,6 +343,18 @@ export default async function BarberDetailPage({
       />
     </div>
   );
+}
+
+// Experience is stored as a whole number of years (string). Render it
+// readably; fall back to raw text for any legacy value, "—" when unset.
+function fmtExperience(raw: string | null): string {
+  const v = (raw ?? "").trim();
+  if (!v) return "—";
+  const years = Number.parseInt(v, 10);
+  if (Number.isInteger(years) && years >= 1) {
+    return years === 1 ? "1 year" : `${years} years`;
+  }
+  return v;
 }
 
 // ── Wallet transaction helpers ──

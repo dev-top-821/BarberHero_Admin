@@ -7,8 +7,9 @@ import {
   jsonResponse,
   errorResponse,
 } from "@/lib/api-utils";
+import { TERMS_VERSION } from "@/lib/legal";
 
-const CURRENT_TERMS_VERSION = "1.0";
+const CURRENT_TERMS_VERSION = TERMS_VERSION;
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateRequest(request);

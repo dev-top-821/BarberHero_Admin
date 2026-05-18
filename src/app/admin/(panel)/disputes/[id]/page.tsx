@@ -160,8 +160,7 @@ export default async function DisputeDetailPage({
             isOpen={isOpen}
             barberIsBlocked={barberIsBlocked}
             paymentStatus={payment?.status ?? null}
-            bookingTotalInPence={report.booking.totalInPence}
-            alreadyRefundedInPence={refundedAmount}
+            serviceRefundInPence={report.booking.totalInPence}
           />
         </div>
       </div>

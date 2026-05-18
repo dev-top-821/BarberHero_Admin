@@ -37,14 +37,26 @@ function initials(name: string) {
 export default async function AdminBarbersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; page?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; search?: string }>;
 }) {
   const params = await searchParams;
   const statusFilter = params.status ?? "ALL";
   const page = Math.max(1, parseInt(params.page ?? "1") || 1);
+  const search = (params.search ?? "").trim();
 
-  const where =
-    statusFilter !== "ALL" ? { status: statusFilter as never } : {};
+  const where = {
+    ...(statusFilter !== "ALL" ? { status: statusFilter as never } : {}),
+    ...(search
+      ? {
+          user: {
+            OR: [
+              { fullName: { contains: search, mode: "insensitive" as const } },
+              { email: { contains: search, mode: "insensitive" as const } },
+            ],
+          },
+        }
+      : {}),
+  };
 
   const [barbers, total] = await Promise.all([
     prisma.barberProfile.findMany({
@@ -94,14 +106,23 @@ export default async function AdminBarbersPage({
         </div>
 
         {/* Search */}
-        <div className="relative sm:ml-auto w-full sm:w-64">
+        <form
+          method="get"
+          action="/admin/barbers"
+          className="relative sm:ml-auto w-full sm:w-64"
+        >
+          {statusFilter !== "ALL" && (
+            <input type="hidden" name="status" value={statusFilter} />
+          )}
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <input
+            name="search"
             type="search"
-            placeholder="Search barbers..."
+            defaultValue={search}
+            placeholder="Search by name or email…"
             className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-[#1A1A1A] placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#D42B2B]"
           />
-        </div>
+        </form>
       </div>
 
       {/* Table */}
@@ -194,6 +215,7 @@ export default async function AdminBarbersPage({
             statusFilter={statusFilter}
             page={page}
             totalPages={totalPages}
+            search={search}
           />
         </div>
       </div>
@@ -205,12 +227,16 @@ function Pagination({
   statusFilter,
   page,
   totalPages,
+  search,
 }: {
   statusFilter: string;
   page: number;
   totalPages: number;
+  search: string;
 }) {
-  const baseQuery = statusFilter !== "ALL" ? `status=${statusFilter}&` : "";
+  const baseQuery =
+    (statusFilter !== "ALL" ? `status=${statusFilter}&` : "") +
+    (search ? `search=${encodeURIComponent(search)}&` : "");
   const makeHref = (p: number) => `/admin/barbers?${baseQuery}page=${p}`;
 
   const pages: (number | "…")[] = [];

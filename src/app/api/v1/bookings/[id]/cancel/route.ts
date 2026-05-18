@@ -63,6 +63,29 @@ export async function POST(
           refundReason: isCustomer ? "Cancelled by customer" : "Cancelled by barber",
         },
       });
+    } else if (payment && payment.status === "FAILED") {
+      // FAILED here = the card was never authorized (the customer
+      // abandoned / cancelled the Stripe sheet, so this is the app's
+      // rollback call). Best-effort cancel the un-authorized intent and
+      // close the payment — there's no hold to release, so a Stripe
+      // error here must not block the booking cancel.
+      try {
+        await stripe.paymentIntents.cancel(
+          payment.stripePaymentIntentId,
+          undefined,
+          { idempotencyKey: `pi-cancel-${payment.id}` }
+        );
+      } catch {
+        // Intent may be unconfirmed / already cancelled — ignore.
+      }
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: "REFUNDED",
+          refundedAt: new Date(),
+          refundReason: isCustomer ? "Cancelled by customer" : "Cancelled by barber",
+        },
+      });
     }
 
     await prisma.booking.update({
