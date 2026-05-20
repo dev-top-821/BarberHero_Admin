@@ -4,7 +4,7 @@ import { stripe, PLATFORM_FEE_PENCE, MIN_BOOKING_PENCE } from "@/lib/stripe";
 import { authenticateRequest, isAuthError, requireRole, jsonResponse, errorResponse } from "@/lib/api-utils";
 import { redactPhonesByStatus } from "@/lib/booking-privacy";
 import { toPublicPhotoUrl } from "@/lib/storage";
-import { TERMS_VERSION } from "@/lib/legal";
+import { TERMS_VERSION, TERMS_ENABLED } from "@/lib/legal";
 import {
   ACTIVE_BOOKING_STATUSES,
   dateOnlyToUTCStartOfDay,
@@ -209,8 +209,9 @@ export async function POST(request: NextRequest) {
     // May-2026 — legal/security before go-live). The app collects this on
     // the payment screen; this is the server-side enforcement.
     if (
-      !customer?.termsAcceptedAt ||
-      customer.termsVersion !== TERMS_VERSION
+      TERMS_ENABLED &&
+      (!customer?.termsAcceptedAt ||
+        customer.termsVersion !== TERMS_VERSION)
     ) {
       return errorResponse(
         "TERMS_NOT_ACCEPTED",

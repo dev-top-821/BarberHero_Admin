@@ -8,7 +8,7 @@ import {
   errorResponse,
 } from "@/lib/api-utils";
 import { geocodePostcode } from "@/lib/geocode";
-import { TERMS_VERSION } from "@/lib/legal";
+import { TERMS_VERSION, TERMS_ENABLED } from "@/lib/legal";
 
 const MIN_PORTFOLIO_PHOTOS = 2;
 const MIN_BIO_CHARS = 50;
@@ -82,8 +82,9 @@ export async function POST(request: NextRequest) {
     // version before an application can be submitted (client request,
     // May-2026 — legal/security before go-live).
     if (
-      !profile.termsAcceptedAt ||
-      profile.termsVersion !== TERMS_VERSION
+      TERMS_ENABLED &&
+      (!profile.termsAcceptedAt ||
+        profile.termsVersion !== TERMS_VERSION)
     ) {
       missing.push("terms");
     }

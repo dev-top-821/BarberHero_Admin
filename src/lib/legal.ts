@@ -11,3 +11,10 @@
 // the final wording, replace the placeholder text in legal.dart and set
 // BOTH constants to the same real version (e.g. "1.0").
 export const TERMS_VERSION = "draft-0";
+
+// While the placeholder text is in place the whole acceptance feature is
+// DORMANT: server gates are skipped and the apps hide the checkbox, so the
+// build behaves exactly as it did before the T&C work. Setting
+// TERMS_VERSION to a real value (and kLegalVersion in legal.dart to the
+// same value) flips everything on at once.
+export const TERMS_ENABLED = TERMS_VERSION !== "draft-0";
