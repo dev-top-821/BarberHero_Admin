@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { existsSync } from "fs";
 import { resolve } from "path";
-import { openForRead, PHOTOS_DIR } from "@/lib/storage";
+import { openForRead, PHOTOS_DIR, transcodeHeicToJpeg } from "@/lib/storage";
 
 // GET /api/v1/photos/[...path]
 //
@@ -60,11 +60,35 @@ export async function GET(
 
     // openForRead returns a Uint8Array<ArrayBuffer>, which is a valid
     // BodyInit — Response can take it directly with no Blob wrapper.
-    return new Response(opened.bytes, {
+    let bytes: Uint8Array<ArrayBuffer> = opened.bytes;
+    let contentType = opened.contentType;
+    let size = opened.size;
+
+    // Legacy HEIC/HEIF that was uploaded before the upload-time transcode
+    // was added — transcode on the fly so Android decoders (which often
+    // can't handle HEIC) get a JPEG. Cache headers below mean the CDN /
+    // device cache absorbs the cost after the first request per file.
+    // Best-effort: on transcode failure, fall through and serve the
+    // original (iOS will still render it).
+    if (contentType === "image/heic" || contentType === "image/heif") {
+      try {
+        const jpeg = await transcodeHeicToJpeg(bytes);
+        bytes = jpeg;
+        contentType = "image/jpeg";
+        size = jpeg.byteLength;
+      } catch (err) {
+        console.error("[photos] heic-to-jpeg transcode failed", {
+          storagePath,
+          message: (err as Error).message,
+        });
+      }
+    }
+
+    return new Response(bytes, {
       status: 200,
       headers: {
-        "Content-Type": opened.contentType,
-        "Content-Length": String(opened.size),
+        "Content-Type": contentType,
+        "Content-Length": String(size),
         "Cache-Control": "public, max-age=31536000, immutable",
       },
     });

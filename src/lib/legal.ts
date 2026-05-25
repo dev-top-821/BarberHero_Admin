@@ -10,11 +10,14 @@
 // the text; the server only tracks the version). When the client supplies
 // the final wording, replace the placeholder text in legal.dart and set
 // BOTH constants to the same real version (e.g. "1.0").
-export const TERMS_VERSION = "draft-0";
+// Explicit `: string` keeps the comparison below valid for either a real
+// version or the placeholder sentinel `"draft-0"` — without it TS narrows
+// to a literal type and rejects the dormancy check.
+export const TERMS_VERSION: string = "1.0";
 
-// While the placeholder text is in place the whole acceptance feature is
-// DORMANT: server gates are skipped and the apps hide the checkbox, so the
-// build behaves exactly as it did before the T&C work. Setting
-// TERMS_VERSION to a real value (and kLegalVersion in legal.dart to the
-// same value) flips everything on at once.
+// While TERMS_VERSION is the placeholder sentinel `"draft-0"` the whole
+// acceptance feature is DORMANT: server gates are skipped and the apps
+// hide the checkbox, so the build behaves exactly as before the T&C work.
+// Setting TERMS_VERSION to any other value (and kLegalVersion in
+// legal.dart to the same value) flips everything on at once.
 export const TERMS_ENABLED = TERMS_VERSION !== "draft-0";

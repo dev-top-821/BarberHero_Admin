@@ -2,6 +2,7 @@ import { mkdir, writeFile, unlink, stat, readFile } from "fs/promises";
 import { existsSync } from "fs";
 import { join, resolve, sep, extname } from "path";
 import { randomUUID } from "crypto";
+import sharp from "sharp";
 
 /// Max upload size in bytes — mirrored on the Flutter side.
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -147,9 +148,38 @@ export function toPublicPhotoUrl(
 }
 
 /**
+ * Re-encode HEIC/HEIF bytes to JPEG (quality 85). Android's image
+ * decoder doesn't reliably handle HEIC across vendors (Honor, many
+ * Samsung/Motorola devices), and iPhone uploads can leak through in
+ * HEIC even when image_picker is asked to re-encode. Transcoding to
+ * JPEG on the server guarantees every client can render the photo.
+ * `.rotate()` bakes in EXIF orientation so the JPEG sits the right way
+ * up after re-encode.
+ */
+export async function transcodeHeicToJpeg(
+  bytes: Uint8Array
+): Promise<Uint8Array<ArrayBuffer>> {
+  const out = await sharp(Buffer.from(bytes))
+    .rotate()
+    .jpeg({ quality: 85, mozjpeg: true })
+    .toBuffer();
+  // Same allocate-by-length pattern used in openForRead: TS 5.7
+  // narrowed BodyInit to require `Uint8Array<ArrayBuffer>` (excluding
+  // SharedArrayBuffer-backed views). Buffer is
+  // `Uint8Array<ArrayBufferLike>`; we have to copy into a fresh
+  // ArrayBuffer-backed view so callers can pass it to `new Response(...)`.
+  const fresh = new Uint8Array(out.byteLength);
+  fresh.set(out);
+  return fresh;
+}
+
+/**
  * Persist an uploaded file to the photos disk. Returns a disk-relative
  * path like `barber-photos/{userId}/profile-{uuid}.jpg` and the public URL
  * that the app can render directly (served by GET /api/v1/photos/[...path]).
+ *
+ * HEIC/HEIF uploads are transcoded to JPEG before saving (see
+ * [transcodeHeicToJpeg]) so the bytes on disk are universally decodable.
  */
 export async function saveToDisk(params: {
   bytes: Uint8Array;
@@ -158,14 +188,21 @@ export async function saveToDisk(params: {
   contentType: string;
   origin: string;
 }): Promise<{ storagePath: string; url: string }> {
-  const ext = extensionFor(params.contentType);
+  let bytes = params.bytes;
+  let contentType = params.contentType;
+  if (contentType === "image/heic" || contentType === "image/heif") {
+    bytes = await transcodeHeicToJpeg(bytes);
+    contentType = "image/jpeg";
+  }
+
+  const ext = extensionFor(contentType);
   const id = randomUUID();
   const filename = `${params.kind}-${id}.${ext}`;
   const subdir = join(KIND_FOLDER[params.kind], params.userId);
 
   const destDir = join(PHOTOS_DIR, subdir);
   await mkdir(destDir, { recursive: true });
-  await writeFile(join(destDir, filename), params.bytes);
+  await writeFile(join(destDir, filename), bytes);
 
   // storagePath is always forward-slashed so it round-trips cleanly with
   // the URL; we re-resolve with `join()` on read so Windows dev hosts
