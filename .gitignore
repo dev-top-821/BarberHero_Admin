@@ -24,6 +24,13 @@
 .DS_Store
 *.pem
 
+# Service-account credentials — Firebase / Google Cloud admin SDK JSONs
+# contain a private_key. Never commit. (Belt-and-suspenders to *.pem.)
+*firebase-adminsdk*.json
+*-service-account*.json
+serviceAccountKey.json
+gcp-credentials.json
+
 # debug
 npm-debug.log*
 yarn-debug.log*
