@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { authenticateRequest, isAuthError, requireRole, jsonResponse, errorResponse } from "@/lib/api-utils";
 import { sendPushToUser } from "@/lib/push";
 import { mirrorRoom } from "@/lib/chat-firestore";
+import { londonWallClockToUTC } from "@/lib/calendar";
 
 const STATUS_TITLES: Record<string, string> = {
   CONFIRMED: "Booking confirmed",
@@ -67,11 +68,11 @@ export async function PATCH(
     // ON_THE_WAY unlocks phone visibility (see booking-privacy.ts) and
     // is otherwise a free toggle, so a barber could spam-flip to read
     // the customer's number 6 hours before the booking. Refuse if more
-    // than 60 minutes before the scheduled start.
+    // than 60 minutes before the scheduled start (London wall-clock —
+    // setUTCHours interprets HH:mm as UTC and pushes the window 1 hour
+    // late during BST, which was blocking barbers who'd arrived early).
     if (status === "ON_THE_WAY") {
-      const [hh, mm] = booking.startTime.split(":").map((s) => Number.parseInt(s, 10));
-      const scheduledStart = new Date(booking.date);
-      scheduledStart.setUTCHours(hh, mm, 0, 0);
+      const scheduledStart = londonWallClockToUTC(booking.date, booking.startTime);
       const minutesUntilStart =
         (scheduledStart.getTime() - Date.now()) / (60 * 1000);
       if (minutesUntilStart > 60) {

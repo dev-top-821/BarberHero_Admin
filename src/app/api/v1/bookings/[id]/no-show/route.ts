@@ -9,6 +9,7 @@ import {
   errorResponse,
 } from "@/lib/api-utils";
 import { sendPushToUser } from "@/lib/push";
+import { londonWallClockToUTC } from "@/lib/calendar";
 
 const GRACE_PERIOD_MS = 30 * 60 * 1000; // 30 minutes after scheduled start.
 
@@ -53,11 +54,11 @@ export async function POST(
       );
     }
 
-    // Combine booking.date (midnight) with booking.startTime ("HH:mm") to
-    // get the actual scheduled moment.
-    const [h, m] = booking.startTime.split(":").map(Number);
-    const scheduled = new Date(booking.date);
-    scheduled.setHours(h, m, 0, 0);
+    // Combine booking.date (midnight) with booking.startTime ("HH:mm")
+    // — interpreted as London wall-clock — to get the actual scheduled
+    // moment. (Plain setHours uses the SERVER's local TZ, which on
+    // Render is US-side, throwing the grace window off by hours.)
+    const scheduled = londonWallClockToUTC(booking.date, booking.startTime);
     const earliest = new Date(scheduled.getTime() + GRACE_PERIOD_MS);
     if (Date.now() < earliest.getTime()) {
       return errorResponse(

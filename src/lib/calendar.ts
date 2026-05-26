@@ -116,3 +116,46 @@ export const ACTIVE_BOOKING_STATUSES = [
   "ON_THE_WAY",
   "STARTED",
 ] as const;
+
+// Turn a (booking.date at UTC midnight, "HH:mm" London-local wall-clock
+// string) pair into the actual UTC moment of that wall-clock time. The
+// codebase stores times as strings deliberately (see comment at the top
+// of this file) so DST doesn't shift previously-booked slots; this is
+// the canonical way to convert one back into an absolute timestamp for
+// "how far is this from now?" checks.
+//
+// Why we need this: setUTCHours treats HH:mm as UTC (off by 1 hour
+// during BST), setHours treats HH:mm as the *server* local TZ (US on
+// Render — wildly wrong). Both bugs existed in different routes. This
+// helper resolves the London offset for the booking's calendar day via
+// Intl, so BST/GMT transitions are handled correctly.
+export function londonWallClockToUTC(
+  dateAtUTCMidnight: Date,
+  startTimeHHmm: string,
+): Date {
+  const [hh, mm] = startTimeHHmm.split(":").map((s) => Number.parseInt(s, 10));
+  // Probe at 12:00 UTC of the booking date — far from any DST edge.
+  const probe = new Date(
+    Date.UTC(
+      dateAtUTCMidnight.getUTCFullYear(),
+      dateAtUTCMidnight.getUTCMonth(),
+      dateAtUTCMidnight.getUTCDate(),
+      12, 0, 0, 0,
+    ),
+  );
+  const londonHour = Number.parseInt(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/London",
+      hour: "2-digit",
+      hour12: false,
+    })
+      .formatToParts(probe)
+      .find((p) => p.type === "hour")?.value ?? "12",
+    10,
+  );
+  // London hour at 12:00 UTC = 12 in GMT, 13 in BST.
+  const offsetHours = londonHour - 12;
+  const result = new Date(dateAtUTCMidnight);
+  result.setUTCHours(hh - offsetHours, mm, 0, 0);
+  return result;
+}

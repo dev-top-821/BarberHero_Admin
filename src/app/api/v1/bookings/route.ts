@@ -12,6 +12,7 @@ import {
   hhmmToMinutes,
   intervalsOverlap,
   isValidHHmm,
+  londonWallClockToUTC,
   minutesToHHmm,
 } from "@/lib/calendar";
 
@@ -161,9 +162,13 @@ export async function POST(request: NextRequest) {
       return errorResponse("SLOT_UNAVAILABLE", "Selected time falls outside the barber's hours", 409);
     }
 
-    // Minimum booking notice.
+    // Minimum booking notice. Slot time is London wall-clock (the user
+    // picked it from a local calendar), so resolve it via the helper
+    // rather than treating HH:mm as UTC — otherwise a slot 1 hour
+    // before "now" in BST would look 2 hours ahead and slip past the
+    // notice gate.
     const minNoticeMs = (settings?.minBookingNoticeHours ?? 2) * 60 * 60 * 1000;
-    const slotStartUtcMs = dateUTC.getTime() + startMinutes * 60_000;
+    const slotStartUtcMs = londonWallClockToUTC(dateUTC, startTime).getTime();
     if (slotStartUtcMs - Date.now() < minNoticeMs) {
       return errorResponse("SLOT_UNAVAILABLE", "Slot is inside the barber's minimum booking notice", 409);
     }
