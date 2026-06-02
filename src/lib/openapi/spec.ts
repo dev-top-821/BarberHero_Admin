@@ -172,6 +172,24 @@ const routes: RouteSpec[] = [
     },
   },
   {
+    method: "delete",
+    path: "/api/v1/users/me",
+    summary: "Delete current account",
+    description:
+      "Permanently deletes the current user's account (Apple Guideline 5.1.1(v)). " +
+      "Anonymises all personal data and blocks the account; booking/payment records " +
+      "are retained (anonymised) for accounting. Blocked with 409 while the user has " +
+      "active bookings, or (for barbers) wallet funds or an in-flight withdrawal.",
+    tags: ["Users"],
+    auth: true,
+    responses: {
+      "200": { description: "Account deleted", schema: z.object({ success: z.boolean() }) },
+      "401": unauthorized,
+      "404": notFound,
+      "409": { description: "Outstanding bookings / funds to resolve first", schema: ErrorResponse },
+    },
+  },
+  {
     method: "patch",
     path: "/api/v1/users/me/fcm-token",
     summary: "Register FCM push token",

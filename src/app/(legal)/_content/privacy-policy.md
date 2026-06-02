@@ -1,6 +1,6 @@
 # BarberHero - Privacy Policy
 
-Last updated: May 2026
+Last updated: June 2026
 
 This Privacy Policy explains how BarberHero collects, uses, stores, and protects personal information from customers and barbers using the BarberHero platform.
 
@@ -202,7 +202,21 @@ These providers may process certain data according to their own privacy policies
 
 ---
 
-## 14. Changes to This Policy
+## 14. Account Deletion
+
+Users and barbers may request deletion of their account and personal data directly from inside the BarberHero app or by contacting support.
+
+Some information may still be retained where reasonably necessary for:
+
+- legal obligations
+- fraud prevention
+- dispute handling
+- unpaid balances
+- accounting and platform security purposes
+
+---
+
+## 15. Changes to This Policy
 
 BarberHero reserves the right to update or modify this Privacy Policy at any time.
 
@@ -210,7 +224,7 @@ Continued use of the platform after updates means acceptance of the revised poli
 
 ---
 
-## 15. Contact
+## 16. Contact
 
 For privacy-related questions or requests:
 

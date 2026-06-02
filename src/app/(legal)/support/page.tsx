@@ -22,7 +22,7 @@ const FAQS = [
   {
     icon: CreditCard,
     title: "Payments",
-    body: "Your card is authorised when you book and only charged once the barber completes the service and you share your verification code.",
+    body: "Your card is authorised when you book and charged once the barber arrives and the appointment is started using the verification code provided by the customer.",
   },
   {
     icon: CalendarCheck,
@@ -32,12 +32,12 @@ const FAQS = [
   {
     icon: UserCog,
     title: "Account & profile",
-    body: "Manage your details in the app. To request deletion of your account and data, email us and we'll take care of it.",
+    body: "Manage your details in the app. You can also request deletion of your account and data either from inside the app or by contacting our support team via email.",
   },
   {
     icon: ShieldCheck,
     title: "Problems & disputes",
-    body: "If something goes wrong with a booking, report it in the app or email us and our team will review it.",
+    body: "If something goes wrong with a booking, please report it in the app or contact our support team. We will review the case and, where appropriate, refunds or resolutions may be provided according to our policies.",
   },
 ];
 
@@ -82,7 +82,7 @@ export default function Support() {
             </p>
           </div>
           <a
-            href="mailto:info@barberhero.co.uk"
+            href="mailto:support@barberhero.app"
             className="inline-flex items-center gap-2 rounded-lg bg-[#D42B2B] px-5 py-3 font-semibold text-white transition-colors hover:bg-[#bb2424]"
           >
             <Mail className="h-5 w-5" />
@@ -92,10 +92,10 @@ export default function Support() {
         <p className="mt-3 text-sm text-neutral-500">
           Or write to{" "}
           <a
-            href="mailto:info@barberhero.co.uk"
+            href="mailto:support@barberhero.app"
             className="font-medium text-[#D42B2B] underline"
           >
-            info@barberhero.co.uk
+            support@barberhero.app
           </a>
         </p>
       </section>

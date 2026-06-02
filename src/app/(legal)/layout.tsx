@@ -41,8 +41,8 @@ export default function LegalLayout({ children }: { children: ReactNode }) {
       <footer className="border-t border-neutral-200 bg-white">
         <div className="mx-auto max-w-3xl px-5 py-6 text-sm text-neutral-500">
           © BarberHero. Questions about your data?{" "}
-          <a className="underline" href="mailto:info@barberhero.co.uk">
-            info@barberhero.co.uk
+          <a className="underline" href="mailto:support@barberhero.app">
+            support@barberhero.app
           </a>
         </div>
       </footer>

@@ -104,6 +104,11 @@ model User {
   // version accepted; gates require it to equal the current TERMS_VERSION.
   termsAcceptedAt DateTime?
   termsVersion    String?
+  // Set when the user deletes their own account (Apple Guideline 5.1.1(v)).
+  // PII is anonymised and `isBlocked` is set in the same transaction, so the
+  // account can no longer authenticate or log in. Financial / booking records
+  // are retained (anonymised) for accounting + audit.
+  deletedAt    DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
