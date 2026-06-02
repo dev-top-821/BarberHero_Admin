@@ -15,7 +15,7 @@ BarberHero is a platform that connects customers with independent freelance barb
 Operated by: Global Urban Solution Ltd (trading as BarberHero)
 
 Contact:
-info@barberhero.co.uk
+support@barberhero.app
 
 United Kingdom
 
@@ -231,7 +231,7 @@ For privacy-related questions or requests:
 Operated by: Global Urban Solution Ltd (trading as BarberHero)
 
 Contact:
-info@barberhero.co.uk
+support@barberhero.app
 
 United Kingdom
 

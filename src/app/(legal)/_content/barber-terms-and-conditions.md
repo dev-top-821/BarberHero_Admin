@@ -233,7 +233,7 @@ Continued use of the platform after updates means acceptance of the revised Term
 Operated by: Global Urban Solution Ltd (trading as BarberHero)
 
 Contact:
-info@barberhero.co.uk
+support@barberhero.app
 
 United Kingdom
 
