@@ -45,6 +45,7 @@ const LEGAL = [
   { href: "/privacy", label: "Privacy Policy" },
   { href: "/terms/customer", label: "Customer Terms & Conditions" },
   { href: "/terms/barber", label: "Barber Terms & Conditions" },
+  { href: "/account-deletion", label: "Delete your account" },
 ];
 
 export default function Support() {
