@@ -77,6 +77,7 @@ export async function GET(request: NextRequest) {
         ) AS "startingPriceInPence"
       FROM "BarberProfile" bp
       JOIN "User" u ON bp."userId" = u.id
+      LEFT JOIN "BarberSettings" bs ON bs."barberProfileId" = bp.id
       WHERE bp.status = 'APPROVED'
         AND bp."isOnline" = true
         AND u."isBlocked" = false
@@ -90,6 +91,19 @@ export async function GET(request: NextRequest) {
             + sin(radians(${lat})) * sin(radians(bp.latitude))
           )
         ) <= ${radiusKm}
+        -- Only surface a barber if the customer is inside THAT barber's own
+        -- service radius (the "maximum travel distance" they set in the Pro
+        -- app). Without this the radius slider was inert — a barber set to
+        -- 2 miles still appeared to customers 9 miles away. Barbers with no
+        -- BarberSettings row yet fall back to the 5.0-mile schema default so
+        -- they don't silently vanish from the map.
+        AND (
+          6371 * acos(
+            cos(radians(${lat})) * cos(radians(bp.latitude))
+            * cos(radians(bp.longitude) - radians(${lng}))
+            + sin(radians(${lat})) * sin(radians(bp.latitude))
+          )
+        ) <= COALESCE(bs."serviceRadiusMiles", 5.0) * 1.60934
       ORDER BY "distanceKm" ASC
       LIMIT 50
     `;

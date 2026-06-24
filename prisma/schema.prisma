@@ -51,6 +51,16 @@ enum TransactionType {
   WITHDRAWAL_REVERSAL
   REFUND_REVERSAL
   DISPUTE_REVERSAL
+  // Customer gratuity, paid on top of the service after completion. Credited
+  // straight to `available` (no 24h hold — a voluntary tip has no service to
+  // dispute) and 100% goes to the barber (no platform fee on tips).
+  TIP
+}
+
+enum TipStatus {
+  PENDING   // PaymentIntent created, customer not yet charged.
+  CAPTURED  // Charged + credited to the barber's wallet.
+  FAILED    // Card declined / customer abandoned the sheet.
 }
 
 enum WithdrawalStatus {
@@ -115,6 +125,7 @@ model User {
   barberProfile BarberProfile?
   bookings      Booking[]      @relation("CustomerBookings")
   reviews       Review[]
+  tips          Tip[]
   chatMessages  ChatMessage[]
 
   @@index([email])
@@ -154,6 +165,7 @@ model BarberProfile {
   wallet       Wallet?
   bookings     Booking[]      @relation("BarberBookings")
   reviews      Review[]
+  tips         Tip[]
   photos       BarberPhoto[]
 
   @@index([status])
@@ -254,6 +266,7 @@ model Booking {
   verificationCode VerificationCode?
   chatRoom         ChatRoom?
   reports          Report[]
+  tips             Tip[]
 
   @@index([customerId])
   @@index([barberId])
@@ -465,4 +478,33 @@ model Review {
 
   @@index([barberProfileId])
   @@index([customerId])
+}
+
+// ─── TIP ──────────────────────────────────────────
+//
+// Optional gratuity the customer adds after a service is completed, charged
+// as a separate Stripe PaymentIntent (the booking charge is already captured
+// by then). Settled with immediate (automatic) capture — there's no service
+// left to dispute — and credited 100% to the barber's `available` wallet
+// balance (no platform fee on tips). See src/lib/tips.ts for the capture +
+// credit routine, which is idempotent across the confirm endpoint and the
+// Stripe webhook.
+model Tip {
+  id                    String        @id @default(uuid())
+  bookingId             String
+  booking               Booking       @relation(fields: [bookingId], references: [id])
+  customerId            String
+  customer              User          @relation(fields: [customerId], references: [id])
+  barberProfileId       String
+  barberProfile         BarberProfile @relation(fields: [barberProfileId], references: [id])
+  stripePaymentIntentId String        @unique
+  amountInPence         Int
+  status                TipStatus     @default(PENDING)
+  capturedAt            DateTime?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@index([bookingId])
+  @@index([barberProfileId])
+  @@index([stripePaymentIntentId])
 }

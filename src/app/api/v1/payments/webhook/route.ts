@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { jsonResponse, errorResponse } from "@/lib/api-utils";
 import { sendPushToUser } from "@/lib/push";
+import { recordCapturedTip, markTipFailed } from "@/lib/tips";
 
 // POST /api/v1/payments/webhook — Stripe webhook handler.
 //
@@ -73,6 +74,13 @@ export async function POST(request: NextRequest) {
 
       case "payment_intent.succeeded": {
         const pi = event.data.object as Stripe.PaymentIntent;
+        // Tips are standalone PaymentIntents (metadata.type === "tip") with no
+        // Payment row — credit the barber's wallet via the shared, idempotent
+        // tip routine instead of the booking-payment reconciliation below.
+        if (pi.metadata?.type === "tip") {
+          await recordCapturedTip(pi.id);
+          break;
+        }
         // Only reconcile a payment that's still HELD (captured out-of-band
         // without our verify endpoint). Never touch FAILED (that's now the
         // pre-authorization marker) or PENDING_RELEASE/RELEASED (the 24h
@@ -93,6 +101,10 @@ export async function POST(request: NextRequest) {
 
       case "payment_intent.canceled": {
         const pi = event.data.object as Stripe.PaymentIntent;
+        if (pi.metadata?.type === "tip") {
+          await markTipFailed(pi.id);
+          break;
+        }
         await prisma.payment.updateMany({
           where: {
             stripePaymentIntentId: pi.id,
@@ -109,6 +121,10 @@ export async function POST(request: NextRequest) {
 
       case "payment_intent.payment_failed": {
         const pi = event.data.object as Stripe.PaymentIntent;
+        if (pi.metadata?.type === "tip") {
+          await markTipFailed(pi.id);
+          break;
+        }
         // A failed/declined attempt only matters before authorization.
         // NEVER downgrade a payment that's already in a good or terminal
         // state — a stray late `payment_failed` flipping a HELD payment
