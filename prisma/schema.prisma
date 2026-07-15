@@ -127,6 +127,7 @@ model User {
   reviews       Review[]
   tips          Tip[]
   chatMessages  ChatMessage[]
+  chatRooms     ChatRoom[]
 
   @@index([email])
   @@index([role])
@@ -167,6 +168,7 @@ model BarberProfile {
   reviews      Review[]
   tips         Tip[]
   photos       BarberPhoto[]
+  chatRooms    ChatRoom[]
 
   @@index([status])
   @@index([isOnline])
@@ -264,7 +266,10 @@ model Booking {
   services         BookingService[]
   payment          Payment?
   verificationCode VerificationCode?
-  chatRoom         ChatRoom?
+  // Points at the persistent per-(barber,customer) chat thread — see
+  // ChatRoom. Multiple bookings between the same two people share one room.
+  chatRoomId       String?
+  chatRoom         ChatRoom?         @relation(fields: [chatRoomId], references: [id])
   reports          Report[]
   tips             Tip[]
 
@@ -272,6 +277,7 @@ model Booking {
   @@index([barberId])
   @@index([status])
   @@index([date])
+  @@index([chatRoomId])
 }
 
 model BookingService {
@@ -376,10 +382,14 @@ model WalletTransaction {
 // ─── CHAT ─────────────────────────────────────────
 
 model ChatRoom {
-  id        String   @id @default(uuid())
-  bookingId String   @unique
-  booking   Booking  @relation(fields: [bookingId], references: [id])
-  createdAt DateTime @default(now())
+  id         String        @id @default(uuid())
+  // One persistent thread per (barber, customer) pair — survives across
+  // however many bookings they make with each other.
+  customerId String
+  customer   User          @relation(fields: [customerId], references: [id])
+  barberId   String
+  barber     BarberProfile @relation(fields: [barberId], references: [id])
+  createdAt  DateTime      @default(now())
   // Last time each party opened the conversation. Used to compute
   // unread counts in the inbox and "Seen" markers on sent messages.
   // Null = never opened — treat every incoming message as unread.
@@ -387,6 +397,9 @@ model ChatRoom {
   barberLastReadAt   DateTime?
 
   messages ChatMessage[]
+  bookings Booking[]
+
+  @@unique([barberId, customerId])
 }
 
 model ChatMessage {

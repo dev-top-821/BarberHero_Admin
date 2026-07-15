@@ -92,10 +92,14 @@ export function generateAvailableSlots(args: GenerateSlotsArgs): string[] {
   const lastStart = winEnd - durationMinutes;
   const out: string[] = [];
 
+  // windowStart/windowEnd are London wall-clock, not UTC — offset must be
+  // subtracted to get the true UTC instant (see londonWallClockToUTC).
+  const offsetMs = londonUtcOffsetHours(new Date(dateUTCStartMs)) * 3_600_000;
+
   for (let t = winStart; t <= lastStart; t += granularityMinutes) {
     const slotEnd = t + durationMinutes;
 
-    const slotStartUtcMs = dateUTCStartMs + t * 60_000;
+    const slotStartUtcMs = dateUTCStartMs + t * 60_000 - offsetMs;
     if (slotStartUtcMs < earliestStartUtcMs) continue;
 
     const conflicts = bookings.some((b) =>
@@ -109,6 +113,37 @@ export function generateAvailableSlots(args: GenerateSlotsArgs): string[] {
   return out;
 }
 
+// Returns HH:mm candidate slot start times that fit inside the window/
+// duration but collide with an existing booking — the complement of
+// generateAvailableSlots' conflict filter. Used so the client can render
+// these as disabled instead of just omitting them from the grid. Ignores
+// the min-notice cutoff: a booked slot is shown as booked regardless of
+// how far away it is.
+export function generateBookedSlots(
+  args: Omit<GenerateSlotsArgs, "earliestStartUtcMs" | "dateUTCStartMs">
+): string[] {
+  const { windowStart, windowEnd, durationMinutes, granularityMinutes, bookings } = args;
+
+  if (durationMinutes <= 0 || granularityMinutes <= 0) return [];
+
+  const winStart = hhmmToMinutes(windowStart);
+  const winEnd = hhmmToMinutes(windowEnd);
+  if (winStart >= winEnd) return [];
+
+  const lastStart = winEnd - durationMinutes;
+  const out: string[] = [];
+
+  for (let t = winStart; t <= lastStart; t += granularityMinutes) {
+    const slotEnd = t + durationMinutes;
+    const conflicts = bookings.some((b) =>
+      intervalsOverlap(t, slotEnd, b.startMinutes, b.endMinutes)
+    );
+    if (conflicts) out.push(minutesToHHmm(t));
+  }
+
+  return out;
+}
+
 // Statuses that actively reserve a barber's time. COMPLETED/CANCELLED do not.
 export const ACTIVE_BOOKING_STATUSES = [
   "PENDING",
@@ -117,24 +152,12 @@ export const ACTIVE_BOOKING_STATUSES = [
   "STARTED",
 ] as const;
 
-// Turn a (booking.date at UTC midnight, "HH:mm" London-local wall-clock
-// string) pair into the actual UTC moment of that wall-clock time. The
-// codebase stores times as strings deliberately (see comment at the top
-// of this file) so DST doesn't shift previously-booked slots; this is
-// the canonical way to convert one back into an absolute timestamp for
-// "how far is this from now?" checks.
-//
-// Why we need this: setUTCHours treats HH:mm as UTC (off by 1 hour
-// during BST), setHours treats HH:mm as the *server* local TZ (US on
-// Render — wildly wrong). Both bugs existed in different routes. This
-// helper resolves the London offset for the booking's calendar day via
-// Intl, so BST/GMT transitions are handled correctly.
-export function londonWallClockToUTC(
-  dateAtUTCMidnight: Date,
-  startTimeHHmm: string,
-): Date {
-  const [hh, mm] = startTimeHHmm.split(":").map((s) => Number.parseInt(s, 10));
-  // Probe at 12:00 UTC of the booking date — far from any DST edge.
+// Resolves the London UTC offset (in hours — 0 for GMT, 1 for BST) for the
+// given calendar day. Probes at 12:00 UTC, far from any DST transition edge.
+// Shared by londonWallClockToUTC and generateAvailableSlots so both agree on
+// what a stored "HH:mm" (always London wall-clock, never UTC) actually means
+// in absolute time.
+export function londonUtcOffsetHours(dateAtUTCMidnight: Date): number {
   const probe = new Date(
     Date.UTC(
       dateAtUTCMidnight.getUTCFullYear(),
@@ -154,7 +177,25 @@ export function londonWallClockToUTC(
     10,
   );
   // London hour at 12:00 UTC = 12 in GMT, 13 in BST.
-  const offsetHours = londonHour - 12;
+  return londonHour - 12;
+}
+
+// Turn a (booking.date at UTC midnight, "HH:mm" London-local wall-clock
+// string) pair into the actual UTC moment of that wall-clock time. The
+// codebase stores times as strings deliberately (see comment at the top
+// of this file) so DST doesn't shift previously-booked slots; this is
+// the canonical way to convert one back into an absolute timestamp for
+// "how far is this from now?" checks.
+//
+// Why we need this: setUTCHours treats HH:mm as UTC (off by 1 hour
+// during BST), setHours treats HH:mm as the *server* local TZ (US on
+// Render — wildly wrong). Both bugs existed in different routes.
+export function londonWallClockToUTC(
+  dateAtUTCMidnight: Date,
+  startTimeHHmm: string,
+): Date {
+  const [hh, mm] = startTimeHHmm.split(":").map((s) => Number.parseInt(s, 10));
+  const offsetHours = londonUtcOffsetHours(dateAtUTCMidnight);
   const result = new Date(dateAtUTCMidnight);
   result.setUTCHours(hh - offsetHours, mm, 0, 0);
   return result;

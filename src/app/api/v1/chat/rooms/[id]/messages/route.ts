@@ -24,18 +24,14 @@ export async function GET(
       select: {
         customerLastReadAt: true,
         barberLastReadAt: true,
-        booking: {
-          select: {
-            customerId: true,
-            barber: { select: { userId: true } },
-          },
-        },
+        customerId: true,
+        barber: { select: { userId: true } },
       },
     });
     if (!room) return errorResponse("NOT_FOUND", "Chat room not found", 404);
 
-    const isCustomer = room.booking.customerId === auth.id;
-    const isBarber = room.booking.barber.userId === auth.id;
+    const isCustomer = room.customerId === auth.id;
+    const isBarber = room.barber.userId === auth.id;
     if (!isCustomer && !isBarber) {
       return errorResponse("FORBIDDEN", "Not a participant", 403);
     }
@@ -81,14 +77,13 @@ export async function POST(
     const room = await prisma.chatRoom.findUnique({
       where: { id },
       select: {
-        booking: {
-          select: { customerId: true, barber: { select: { userId: true } } },
-        },
+        customerId: true,
+        barber: { select: { userId: true } },
       },
     });
 
     if (room) {
-      const { customerId, barber } = room.booking;
+      const { customerId, barber } = room;
       const recipientId = auth.id === customerId ? barber.userId : customerId;
       // Mirror to Firestore so the peer's snapshot listener receives the
       // message instantly. Awaited (not voided) so a successful POST means

@@ -89,35 +89,53 @@ export async function PATCH(
       data: { status },
     });
 
-    // On CONFIRMED: generate the arrival code + open the chat room.
-    // Both are idempotent via the unique bookingId index, so a retry
-    // won't blow up.
+    // On CONFIRMED: generate the arrival code + attach the booking to this
+    // barber/customer pair's persistent chat room (find-or-create — the
+    // same two people re-booking each other reuse one thread).
     if (status === "CONFIRMED") {
       const code = Math.floor(1000 + Math.random() * 9000).toString();
       await prisma.verificationCode.create({
         data: { bookingId: id, code },
       });
-      const room = await prisma.chatRoom
-        .create({ data: { bookingId: id } })
-        .catch(() => {
-          // Room may already exist if an earlier call half-succeeded —
-          // the unique constraint will catch it and we ignore.
-          return null;
+
+      const full = await prisma.booking.findUnique({
+        where: { id },
+        select: { customerId: true, barberId: true, barber: { select: { userId: true } } },
+      });
+
+      if (full) {
+        const pairKey = { barberId: full.barberId, customerId: full.customerId };
+        let room = await prisma.chatRoom.findUnique({
+          where: { barberId_customerId: pairKey },
         });
-      if (room) {
-        // Mirror room metadata to Firestore so the rooms list snapshot
-        // listener picks it up on both sides immediately.
-        const full = await prisma.booking.findUnique({
-          where: { id },
-          select: { customerId: true, barber: { select: { userId: true } } },
-        });
-        if (full) {
-          await mirrorRoom({
-            roomId: room.id,
-            customerId: full.customerId,
-            barberId: full.barber.userId,
-            createdAt: room.createdAt,
-          });
+        let isNewRoom = false;
+
+        if (!room) {
+          room = await prisma.chatRoom
+            .create({ data: pairKey })
+            .catch(() => null);
+          if (room) {
+            isNewRoom = true;
+          } else {
+            // Lost a create race — another concurrent CONFIRMED call
+            // created it first. Fetch what's there now.
+            room = await prisma.chatRoom.findUnique({ where: { barberId_customerId: pairKey } });
+          }
+        }
+
+        if (room) {
+          await prisma.booking.update({ where: { id }, data: { chatRoomId: room.id } });
+          // Only mirror on first creation — mirrorRoom unconditionally
+          // resets lastMessage/lastMessageAt, which would wipe an
+          // existing thread's preview if called again on reuse.
+          if (isNewRoom) {
+            await mirrorRoom({
+              roomId: room.id,
+              customerId: full.customerId,
+              barberId: full.barber.userId,
+              createdAt: room.createdAt,
+            });
+          }
         }
       }
     }

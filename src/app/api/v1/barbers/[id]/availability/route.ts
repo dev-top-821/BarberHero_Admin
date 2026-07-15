@@ -7,6 +7,7 @@ import {
   dateOnlyToUTCStartOfDay,
   dayOfWeekFromUTCDate,
   generateAvailableSlots,
+  generateBookedSlots,
   hhmmToMinutes,
   isValidHHmm,
 } from "@/lib/calendar";
@@ -137,10 +138,22 @@ export async function GET(
     dateUTCStartMs: dateUTC.getTime(),
   });
 
+  // Slots that fall inside the barber's window and duration but are taken by
+  // an existing booking — returned so the client can render them as
+  // disabled instead of just omitting them from the grid.
+  const bookedSlots = generateBookedSlots({
+    windowStart,
+    windowEnd,
+    durationMinutes,
+    granularityMinutes,
+    bookings: bookedIntervals,
+  });
+
   return jsonResponse({
     date: dateStr,
     durationMinutes,
     granularityMinutes,
     availableSlots,
+    bookedSlots,
   });
 }

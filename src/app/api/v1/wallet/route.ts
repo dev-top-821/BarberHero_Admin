@@ -37,7 +37,14 @@ export async function GET(request: NextRequest) {
     const wallet = await prisma.wallet.findUnique({
       where: { barberProfileId: profile.id },
       include: {
-        transactions: { orderBy: { createdAt: "desc" }, take: 20 },
+        // PLATFORM_FEE is deducted from the customer's charge before it ever
+        // reaches the barber's wallet — showing it here reads as a fee taken
+        // out of the barber's own earnings, which it isn't.
+        transactions: {
+          where: { type: { not: "PLATFORM_FEE" } },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+        },
         withdrawalRequests: {
           orderBy: { createdAt: "desc" },
           take: 10,
