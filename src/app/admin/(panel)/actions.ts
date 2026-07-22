@@ -33,7 +33,9 @@ export async function approveBarber(barberId: string) {
   await requireAdmin();
   const barber = await prisma.barberProfile.update({
     where: { id: barberId },
-    data: { status: "APPROVED", rejectionReason: null },
+    // Approved barbers should be immediately bookable without an extra
+    // manual step, so default them online.
+    data: { status: "APPROVED", rejectionReason: null, isOnline: true },
     include: { user: { select: { id: true } } },
   });
   void sendPushToUser(barber.user.id, {

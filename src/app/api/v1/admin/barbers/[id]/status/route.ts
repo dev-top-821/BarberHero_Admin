@@ -39,11 +39,15 @@ export async function PATCH(
     const data: {
       status: "APPROVED" | "REJECTED" | "BLOCKED";
       rejectionReason: string | null;
+      isOnline?: boolean;
     } = {
       status,
       // Clear the reason when flipping to APPROVED / BLOCKED so a stale
       // one doesn't show up if the barber is later re-rejected.
       rejectionReason: status === "REJECTED" ? (reason as string).trim() : null,
+      // Approved barbers should be immediately bookable without an extra
+      // manual step, so default them online.
+      ...(status === "APPROVED" ? { isOnline: true } : {}),
     };
 
     const barber = await prisma.barberProfile.update({
